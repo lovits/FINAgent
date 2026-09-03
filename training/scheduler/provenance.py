@@ -49,6 +49,14 @@ _EXPERT_CONFIG_FIELDS = (
     "tool_vendors",
 )
 
+_FLOAT_CONFIG_FIELDS = {"temperature", "teacher_temperature"}
+_INTEGER_CONFIG_FIELDS = {
+    "max_debate_rounds",
+    "max_risk_discuss_rounds",
+    "scheduler_max_steps",
+    "scheduler_max_context_tokens",
+}
+
 
 def code_provenance(repo_root: str | Path | None = None) -> dict[str, Any]:
     root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[2]
@@ -68,11 +76,7 @@ def generation_config_hash(
         "mode": mode,
         "policy_id": policy_id,
         "selected_analysts": list(selected_analysts),
-        "config": {
-            key: config.get(key)
-            for key in _CONFIG_FINGERPRINT_FIELDS
-            if key in config
-        },
+        "config": _canonical_config(config, _CONFIG_FINGERPRINT_FIELDS),
     }
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode()).hexdigest()
@@ -83,7 +87,7 @@ def expert_config_hash(
 ) -> str:
     payload = {
         "selected_analysts": list(selected_analysts),
-        "config": {key: config.get(key) for key in _EXPERT_CONFIG_FIELDS},
+        "config": _canonical_config(config, _EXPERT_CONFIG_FIELDS),
     }
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode()).hexdigest()
@@ -147,3 +151,19 @@ def _git(root: Path, *arguments: str) -> str:
     except (FileNotFoundError, subprocess.SubprocessError):
         return ""
     return result.stdout.strip()
+
+
+def _canonical_config(
+    config: Mapping[str, Any], fields: Sequence[str]
+) -> dict[str, Any]:
+    values = {}
+    for key in fields:
+        if key not in config:
+            continue
+        value = config.get(key)
+        if value not in (None, "") and key in _FLOAT_CONFIG_FIELDS:
+            value = float(value)
+        elif value not in (None, "") and key in _INTEGER_CONFIG_FIELDS:
+            value = int(value)
+        values[key] = value
+    return values

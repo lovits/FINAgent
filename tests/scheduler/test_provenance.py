@@ -63,6 +63,19 @@ def test_expert_hash_changes_only_with_execution_configuration() -> None:
     assert first != different
 
 
+def test_expert_hash_normalizes_environment_numeric_strings() -> None:
+    from_environment = expert_config_hash(
+        _config(temperature="0.0", max_debate_rounds="1"),
+        selected_analysts=("market", "news"),
+    )
+    programmatic = expert_config_hash(
+        _config(temperature=0.0, max_debate_rounds=1),
+        selected_analysts=("market", "news"),
+    )
+
+    assert from_environment == programmatic
+
+
 def test_trajectory_provenance_records_versions_without_secrets() -> None:
     provenance = trajectory_provenance(
         config=_config(OPENROUTER_API_KEY="must-not-leak"),
