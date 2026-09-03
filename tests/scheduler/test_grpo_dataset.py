@@ -36,3 +36,37 @@ def test_grpo_dataset_and_collator_preserve_policy_statistics(tmp_path) -> None:
     assert batch["old_logprobs"].item() == -0.5
     assert batch["ref_logprobs"].item() == pytest.approx(-0.7)
     assert batch["advantages"].item() == 1.0
+
+
+def test_grpo_dataset_requires_complete_zero_mean_groups(tmp_path) -> None:
+    target = tmp_path / "grpo.jsonl"
+    first = _row()
+    first["advantage"] = 1.0
+    second = {
+        **_row(),
+        "trajectory_id": "trajectory-2",
+        "advantage": -1.0,
+    }
+    target.write_text(
+        json.dumps(first) + "\n" + json.dumps(second) + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = SchedulerGRPODataset(target, expected_group_size=2)
+    assert len(dataset) == 2
+
+    with pytest.raises(ValueError, match="expected 4"):
+        SchedulerGRPODataset(target, expected_group_size=4)
+
+
+def test_grpo_dataset_rejects_non_zero_mean_credit(tmp_path) -> None:
+    target = tmp_path / "grpo.jsonl"
+    first = _row()
+    second = {**_row(), "trajectory_id": "trajectory-2"}
+    target.write_text(
+        json.dumps(first) + "\n" + json.dumps(second) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="not zero-mean"):
+        SchedulerGRPODataset(target, expected_group_size=2)

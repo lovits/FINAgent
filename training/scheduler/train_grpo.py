@@ -26,6 +26,7 @@ class GRPOTrainConfig:
     attention_implementation: str = "sdpa"
     max_length: int = 32768
     rollout_temperature: float = 0.8
+    group_size: int = 4
     micro_batch_size: int = 1
     gradient_accumulation_steps: int = 8
     epochs: int = 1
@@ -61,7 +62,10 @@ def train(config: GRPOTrainConfig) -> dict[str, float]:
         ),
         training=True,
     )
-    dataset = SchedulerGRPODataset(config.rollout_path)
+    dataset = SchedulerGRPODataset(
+        config.rollout_path,
+        expected_group_size=config.group_size,
+    )
     loader = DataLoader(
         dataset,
         batch_size=config.micro_batch_size,

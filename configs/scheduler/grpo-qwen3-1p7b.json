@@ -8,6 +8,7 @@
   "attention_implementation": "sdpa",
   "max_length": 32768,
   "rollout_temperature": 0.8,
+  "group_size": 4,
   "micro_batch_size": 1,
   "gradient_accumulation_steps": 8,
   "epochs": 1,
