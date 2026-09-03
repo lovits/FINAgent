@@ -25,7 +25,7 @@ def _initial_state() -> dict:
 
 class _Propagator:
     @staticmethod
-    def get_graph_args() -> dict:
+    def get_graph_args(callbacks=None) -> dict:
         return {}
 
 

@@ -83,6 +83,7 @@ def train(config: GRPOTrainConfig) -> dict[str, float]:
                 outputs = model(
                     input_ids=batch["input_ids"],
                     attention_mask=batch["attention_mask"],
+                    logits_to_keep=1,
                 )
                 new_logprobs = selected_action_logprobs(
                     outputs.logits,

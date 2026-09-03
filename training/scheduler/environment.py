@@ -14,6 +14,7 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.scheduler.action_mask import compute_action_mask
 from tradingagents.scheduler.actions import ACTION_BY_NODE, SchedulerAction
 from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext, SchedulerPolicy
+from tradingagents.scheduler.cost_tracker import CostSnapshot, SchedulerCostCallback
 from tradingagents.scheduler.prompt import build_scheduler_input, business_state
 from tradingagents.scheduler.recorder import TrajectoryRecorder
 from tradingagents.scheduler.trajectory import (
@@ -92,9 +93,16 @@ class TradingAgentsSchedulerEnvironment:
             trade_date=str(task["trade_date"]),
             asset_type=str(task.get("asset_type", "stock")),
             data_snapshot_id=task.get("data_snapshot_id"),
-            provenance={"task_dataset_version": task.get("dataset_version")},
+            provenance={
+                "task_dataset_version": task.get("dataset_version"),
+                "task_split": task.get("split"),
+                "seed_family": task.get("seed_family"),
+                "sector": task.get("sector"),
+                "information_cutoff": task.get("information_cutoff"),
+            },
         )
         recorder = TrajectoryRecorder(trajectory)
+        cost_tracker = SchedulerCostCallback()
         runtime_config = {
             **self.config,
             "orchestration_mode": mode,
@@ -104,6 +112,7 @@ class TradingAgentsSchedulerEnvironment:
         graph = self.graph_factory(
             selected_analysts=self.selected_analysts,
             config=runtime_config,
+            callbacks=[cost_tracker],
             scheduler_policy=policy,
             scheduler_on_decision=recorder.record_decision,
         )
@@ -116,7 +125,13 @@ class TradingAgentsSchedulerEnvironment:
         )
 
         try:
-            final_state = self._capture(graph, initial_state, recorder, mode)
+            final_state = self._capture(
+                graph,
+                initial_state,
+                recorder,
+                mode,
+                cost_tracker,
+            )
             if mode == "static":
                 self._record_static_stop(final_state, recorder)
             status = "completed" if final_state.get("final_trade_decision") else "failed"
@@ -143,13 +158,15 @@ class TradingAgentsSchedulerEnvironment:
         initial_state: dict[str, Any],
         recorder: TrajectoryRecorder,
         mode: str,
+        cost_tracker: SchedulerCostCallback,
     ) -> dict[str, Any]:
         current_state = deepcopy(initial_state)
         pending_updates: list[tuple[str, object, dict[str, Any], float]] = []
         observation_ref: str | None = None
         pending_tool_calls = 0
         decision_started: float | None = None
-        arguments = graph.propagator.get_graph_args()
+        cost_baseline = CostSnapshot()
+        arguments = graph.propagator.get_graph_args(callbacks=[cost_tracker])
         arguments["stream_mode"] = ["updates", "values"]
 
         for stream_mode, payload in graph.graph.stream(initial_state, **arguments):
@@ -190,12 +207,15 @@ class TradingAgentsSchedulerEnvironment:
                 if node_name == recorder.pending_agent_node:
                     observation_ref = f"node-{node_id}"
                 if self._completes_pending(node_name, recorder.pending_agent_node):
+                    measured_cost = cost_tracker.snapshot().delta(cost_baseline)
                     recorder.record_observation(
                         next_state,
                         observation_ref=observation_ref or f"node-{node_id}",
                         cost=ExecutionCost(
                             agent_calls=1,
-                            tool_calls=pending_tool_calls,
+                            tool_calls=max(pending_tool_calls, measured_cost.tool_calls),
+                            input_tokens=measured_cost.input_tokens,
+                            output_tokens=measured_cost.output_tokens,
                             latency_ms=max(
                                 0.0,
                                 (monotonic() - (decision_started or started_at)) * 1000,
@@ -205,6 +225,7 @@ class TradingAgentsSchedulerEnvironment:
                     observation_ref = None
                     pending_tool_calls = 0
                     decision_started = None
+                    cost_baseline = cost_tracker.snapshot()
             pending_updates.clear()
             current_state = next_state
         return current_state

@@ -125,6 +125,7 @@ def train(config: SFTTrainConfig) -> dict[str, float]:
                 outputs = model(
                     input_ids=batch["input_ids"],
                     attention_mask=batch["attention_mask"],
+                    logits_to_keep=1,
                 )
                 loss, _ = masked_action_cross_entropy(
                     outputs.logits,
@@ -176,6 +177,7 @@ def _validate(model, loader, accelerator) -> dict[str, float]:
             outputs = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
+                logits_to_keep=1,
             )
             loss, logprobs = masked_action_cross_entropy(
                 outputs.logits,

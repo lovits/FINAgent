@@ -75,9 +75,11 @@ class HFSchedulerPolicy:
             )
         tensor = torch.tensor([input_ids], device=self.device)
         with torch.no_grad():
-            logits = self.model(input_ids=tensor, attention_mask=torch.ones_like(tensor)).logits[
-                0, -1
-            ]
+            logits = self.model(
+                input_ids=tensor,
+                attention_mask=torch.ones_like(tensor),
+                logits_to_keep=1,
+            ).logits[0, -1]
         token_ids = torch.tensor(
             [self._action_token_id(action) for action in context.valid_actions],
             device=logits.device,

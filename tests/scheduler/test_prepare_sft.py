@@ -1,3 +1,5 @@
+import pytest
+
 from tradingagents.scheduler.trajectory import SchedulerStep, SchedulerTrajectory
 from training.scheduler.prepare_sft import prepare_sft_dataset
 
@@ -51,3 +53,19 @@ def test_reports_overflow_from_both_sources() -> None:
     )
     assert examples == []
     assert overflow == 2
+
+
+def test_rejects_conflicting_labels_for_identical_input() -> None:
+    static = _trajectory("static-1", "static")
+    teacher = _trajectory("teacher-1", "teacher")
+    teacher.steps[0].selected_action = "<ACT_MARKET>"
+    teacher.steps[0].valid_actions.append("<ACT_MARKET>")
+    teacher.steps[0].agent_node = "Market Analyst"
+
+    with pytest.raises(ValueError, match="conflicting actions"):
+        prepare_sft_dataset(
+            [static],
+            [teacher],
+            verified_ids={"teacher-1"},
+            token_counter=len,
+        )

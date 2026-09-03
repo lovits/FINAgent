@@ -570,6 +570,7 @@ Few-shot文件最多保留少量覆盖性示例，防止Teacher照抄一条固�
 SchedulerContext
 → Canonical Prompt Builder
 → Qwen3-1.7B + Adapter forward
+→ `logits_to_keep=1`只保留最后决策位置
 → 获取最后位置logits
 → gather 13个Action Token logits
 → invalid action设为负无穷

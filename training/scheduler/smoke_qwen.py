@@ -49,7 +49,11 @@ def run_smoke(config: QwenSmokeConfig) -> dict[str, object]:
         valid_ids = torch.tensor([action_ids[:2]], device="cuda")
         started = monotonic()
         try:
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                logits_to_keep=1,
+            )
             loss, _ = masked_action_cross_entropy(
                 outputs.logits,
                 torch.tensor([length - 1], device="cuda"),

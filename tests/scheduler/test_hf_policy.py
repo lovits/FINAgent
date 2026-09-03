@@ -20,7 +20,7 @@ class _Model:
     def eval(self):
         return self
 
-    def __call__(self, input_ids, attention_mask):
+    def __call__(self, input_ids, attention_mask, **kwargs):
         logits = torch.zeros((1, input_ids.shape[1], len(self.tokenizer)))
         logits[0, -1, self.tokenizer.action_ids[SchedulerAction.MARKET]] = 1.0
         logits[0, -1, self.tokenizer.action_ids[SchedulerAction.NEWS]] = 4.0

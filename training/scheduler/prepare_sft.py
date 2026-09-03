@@ -46,12 +46,14 @@ def prepare_sft_dataset(
 
 def _deduplicate(examples: Iterable[SFTExample]) -> list[SFTExample]:
     values = []
-    seen: set[tuple[str, str]] = set()
+    target_by_input: dict[str, str] = {}
     for example in examples:
-        key = (example.input_text, example.target_action)
-        if key in seen:
+        existing = target_by_input.get(example.input_text)
+        if existing is not None and existing != example.target_action:
+            raise ValueError("conflicting actions for the same scheduler input")
+        if existing is not None:
             continue
-        seen.add(key)
+        target_by_input[example.input_text] = example.target_action
         values.append(example)
     return values
 

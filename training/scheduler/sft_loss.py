@@ -15,6 +15,8 @@ def masked_action_logprobs(
 
     if temperature <= 0:
         raise ValueError("logprob temperature must be positive")
+    if logits.shape[1] == 1:
+        prediction_indices = torch.zeros_like(prediction_indices)
     batch = torch.arange(logits.shape[0], device=logits.device)
     decision_logits = logits[batch, prediction_indices]
     valid_logits = decision_logits.gather(1, valid_action_token_ids)
