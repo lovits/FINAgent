@@ -560,6 +560,8 @@ SFT与GRPO Adapter分别以`temperature=0`在每个Validation任务上生成一�
 | 成本 | Agent调用、Tool调用、输入/输出Token、延迟 |
 | 动态性 | 与Static完全相同路径比例、不同合法路径数量 |
 
+报告同时保存每种模式的run ID、Policy ID、代码提交、任务集版本、生成配置指纹、Expert配置指纹和模型名称摘要。
+
 第一版目标：Learned模式完成率相对Static下降不超过5个百分点，同时平均Agent调用或Token成本至少降低10%。这是验收目标，最终结果以实际A/B报告为准。
 
 ## 22. 训练完成标准

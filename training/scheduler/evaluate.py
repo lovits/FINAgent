@@ -75,6 +75,7 @@ def evaluate_sets(
     static_values = list(static)
     static_map = _index_by_task(static_values, name="static")
     results = {"static": evaluate_trajectories(static_values, static_map)}
+    provenance = {"static": _provenance_summary(static_values)}
     for name, trajectories in candidate_sets.items():
         values = list(trajectories)
         candidate_map = _index_by_task(values, name=name)
@@ -88,6 +89,7 @@ def evaluate_sets(
         for key, candidate in candidate_map.items():
             _validate_comparable(static_map[key], candidate, name=name)
         results[name] = evaluate_trajectories(values, static_map)
+        provenance[name] = _provenance_summary(values)
     return {
         "evaluation_schema_version": "scheduler-evaluation-v1",
         "task_alignment": {
@@ -95,6 +97,7 @@ def evaluate_sets(
             "task_count": len(static_map),
             "strict": True,
         },
+        "provenance": provenance,
         "modes": results,
     }
 
@@ -131,6 +134,33 @@ def _validate_comparable(
             raise ValueError(f"A/B provenance is missing {field} for {name}")
         if candidate_value != static_value:
             raise ValueError(f"A/B provenance mismatch for {name}: {field}")
+
+
+def _provenance_summary(
+    trajectories: Iterable[SchedulerTrajectory],
+) -> dict[str, list[str]]:
+    values = list(trajectories)
+
+    def unique(field: str) -> list[str]:
+        return sorted(
+            {
+                str(value)
+                for trajectory in values
+                if (value := trajectory.provenance.get(field)) is not None
+            }
+        )
+
+    return {
+        "run_ids": sorted({trajectory.run_id for trajectory in values}),
+        "policy_ids": sorted({trajectory.policy_id for trajectory in values}),
+        "git_commits": unique("git_commit"),
+        "task_dataset_versions": unique("task_dataset_version"),
+        "generation_config_hashes": unique("generation_config_hash"),
+        "expert_config_hashes": unique("expert_config_hash"),
+        "quick_models": unique("quick_model"),
+        "deep_models": unique("deep_model"),
+        "teacher_models": unique("teacher_model"),
+    }
 
 
 def _trajectory_metrics(

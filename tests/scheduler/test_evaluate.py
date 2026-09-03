@@ -41,9 +41,13 @@ def _trajectory(identifier: str, mode: str, actions: list[tuple[str, str | None]
     trajectory.cost_total = ExecutionCost(agent_calls=len(actions) - 1, tool_calls=2)
     trajectory.execution_status = "completed"
     trajectory.provenance = {
+        "git_commit": "abc123",
         "task_dataset_version": "scheduler-tasks-v1",
         "information_cutoff": "2026-01-05T23:59:59Z",
         "expert_config_hash": "expert-config-1",
+        "generation_config_hash": f"generation-{mode}",
+        "quick_model": "expert-quick",
+        "deep_model": "expert-deep",
         "scheduler_max_steps": 16,
     }
     return trajectory
@@ -73,6 +77,8 @@ def test_evaluation_reports_quality_cost_and_path_dynamics() -> None:
         "task_count": 1,
         "strict": True,
     }
+    assert report["provenance"]["static"]["git_commits"] == ["abc123"]
+    assert report["provenance"]["grpo"]["policy_ids"] == ["learned-v1"]
 
 
 def test_evaluation_rejects_missing_candidate_tasks() -> None:
