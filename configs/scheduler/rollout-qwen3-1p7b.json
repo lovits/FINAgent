@@ -1,6 +1,6 @@
 {
   "tasks_path": "data/scheduler/v1/tasks/train_60.jsonl",
-  "static_trajectories_path": "data/scheduler/v1/static/accepted.jsonl",
+  "static_trajectories_path": "data/scheduler/v1/static/train/accepted.jsonl",
   "active_adapter_path": "artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best",
   "reference_adapter_path": "artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best",
   "output_dir": "artifacts/scheduler/qwen3-1p7b/rollouts/iteration-001",

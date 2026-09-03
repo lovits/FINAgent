@@ -240,6 +240,8 @@ Validation：
 configs/scheduler/sft-qwen3-1p7b.json
 configs/scheduler/rollout-qwen3-1p7b.json
 configs/scheduler/grpo-qwen3-1p7b.json
+configs/scheduler/eval-sft-qwen3-1p7b.json
+configs/scheduler/eval-grpo-qwen3-1p7b.json
 ```
 
 本地模型路径：
