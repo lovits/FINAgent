@@ -33,6 +33,14 @@ from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
+from tradingagents.scheduler.cost_tracker import (
+    SchedulerLLMStatsCallback,
+    SchedulerToolStatsCallback,
+)
+from tradingagents.scheduler.policy import SchedulerPolicy
+from tradingagents.scheduler.recorder import TrajectoryRecorder
+from tradingagents.scheduler.scheduler_node import SchedulerFallbackError
+from tradingagents.scheduler.verifier import verify_trajectory
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
@@ -71,6 +79,7 @@ class TradingAgentsGraph:
         debug=False,
         config: dict[str, Any] = None,
         callbacks: list | None = None,
+        scheduler_policy: SchedulerPolicy | None = None,
     ):
         """Initialize the trading agents graph and components.
 
@@ -82,7 +91,47 @@ class TradingAgentsGraph:
         """
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
-        self.callbacks = callbacks or []
+        self.callbacks = list(callbacks or [])
+        self.requested_scheduler_mode = self.config.get("scheduler_mode", "static")
+        if self.requested_scheduler_mode not in {"static", "learned"}:
+            raise ValueError(
+                f"scheduler_mode must be 'static' or 'learned', got "
+                f"{self.requested_scheduler_mode!r}"
+            )
+        self.scheduler_policy = scheduler_policy
+        self.scheduler_fallback_reason = None
+        self.scheduler_mode = self.requested_scheduler_mode
+        if self.scheduler_mode == "learned" and self.scheduler_policy is None:
+            base_model = self.config.get("scheduler_base_model")
+            adapter_path = self.config.get("scheduler_adapter_path")
+            if base_model and adapter_path:
+                try:
+                    from tradingagents.scheduler.hf_policy import load_hf_scheduler_policy
+
+                    self.scheduler_policy = load_hf_scheduler_policy(self.config)
+                except (ImportError, OSError, RuntimeError, ValueError) as exc:
+                    self.scheduler_fallback_reason = f"scheduler_policy_load_failed:{exc}"
+        if self.scheduler_mode == "learned" and self.scheduler_policy is None:
+            if not self.config.get("scheduler_fallback_enabled", True):
+                reason = self.scheduler_fallback_reason or "scheduler_policy_unavailable"
+                raise ValueError(f"learned scheduler unavailable: {reason}")
+            self.scheduler_mode = "static"
+            self.scheduler_fallback_reason = (
+                self.scheduler_fallback_reason or "scheduler_policy_unavailable"
+            )
+            logger.warning(
+                "Learned scheduler unavailable (%s); using static graph",
+                self.scheduler_fallback_reason,
+            )
+
+        self.scheduler_llm_stats = None
+        self.scheduler_tool_stats = None
+        self.runtime_callbacks = []
+        if self.scheduler_mode == "learned":
+            self.scheduler_llm_stats = SchedulerLLMStatsCallback()
+            self.scheduler_tool_stats = SchedulerToolStatsCallback()
+            self.callbacks.append(self.scheduler_llm_stats)
+            self.runtime_callbacks.append(self.scheduler_tool_stats)
 
         # Update the interface's config
         set_config(self.config)
@@ -144,9 +193,32 @@ class TradingAgentsGraph:
 
         # Graph-shape-affecting run choices, kept for the checkpoint signature.
         self.selected_analysts = tuple(selected_analysts)
+        self.trajectory_recorder = None
+        if self.scheduler_mode == "learned":
+            trace_path = None
+            if self.config.get("scheduler_trace_enabled", True):
+                trace_path = self.config.get("scheduler_trace_dir") or (
+                    Path(self.config["results_dir"])
+                    / "scheduler_traces"
+                    / "trajectories.jsonl"
+                )
+            self.trajectory_recorder = TrajectoryRecorder(
+                trace_path,
+                stats_provider=self._scheduler_stats_snapshot,
+            )
 
-        # Set up the graph: keep the workflow for recompilation with a checkpointer.
-        self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        # Always keep the original static graph available for A/B and fallback.
+        self.static_workflow = self.graph_setup.setup_static_graph(selected_analysts)
+        if self.scheduler_mode == "static":
+            self.workflow = self.static_workflow
+        else:
+            self.workflow = self.graph_setup.setup_graph(
+                selected_analysts,
+                scheduler_mode="learned",
+                scheduler_policy=self.scheduler_policy,
+                scheduler_max_steps=self.config.get("scheduler_max_steps", 16),
+                scheduler_on_decision=self.trajectory_recorder.record_decision,
+            )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
@@ -184,6 +256,16 @@ class TradingAgentsGraph:
             kwargs["max_retries"] = _coerce_max_retries(max_retries)
 
         return kwargs
+
+    def _scheduler_stats_snapshot(self) -> dict[str, int]:
+        stats = (
+            self.scheduler_llm_stats.snapshot()
+            if self.scheduler_llm_stats is not None
+            else {}
+        )
+        if self.scheduler_tool_stats is not None:
+            stats.update(self.scheduler_tool_stats.snapshot())
+        return stats
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
@@ -352,11 +434,17 @@ class TradingAgentsGraph:
         selection, debate/risk depth, or asset mode starts fresh instead of
         silently continuing the previous graph (#1089).
         """
+        scheduler_mode = getattr(
+            self, "scheduler_mode", self.config.get("scheduler_mode", "static")
+        )
+        scheduler_policy = getattr(self, "scheduler_policy", None)
         return "|".join([
             "analysts=" + ",".join(self.selected_analysts),
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            f"scheduler_mode={scheduler_mode}",
+            f"scheduler_policy={getattr(scheduler_policy, 'policy_id', 'none')}",
         ])
 
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):
@@ -416,6 +504,62 @@ class TradingAgentsGraph:
             )
         return write_report_tree(final_state, ticker, save_path)
 
+    def stream_graph(self, initial_state, **args):
+        """Stream the active graph and restart with the static graph on scheduler failure."""
+
+        if (
+            getattr(self, "requested_scheduler_mode", self.scheduler_mode) == "learned"
+            and self.scheduler_mode == "static"
+            and self.scheduler_fallback_reason
+        ):
+            yield {
+                "scheduler_requested_mode": "learned",
+                "scheduler_mode": "static",
+                "scheduler_fallback_reason": self.scheduler_fallback_reason,
+            }
+        try:
+            yield from self.graph.stream(initial_state, **args)
+        except SchedulerFallbackError as exc:
+            if self.scheduler_mode != "learned" or not self.config.get(
+                "scheduler_fallback_enabled", True
+            ):
+                raise
+            self.scheduler_fallback_reason = exc.reason
+            yield {
+                "scheduler_requested_mode": "learned",
+                "scheduler_mode": "static",
+                "scheduler_fallback_reason": exc.reason,
+            }
+            fallback_state = self.propagator.create_initial_state(
+                initial_state["company_of_interest"],
+                initial_state["trade_date"],
+                asset_type=initial_state.get("asset_type", "stock"),
+                past_context=initial_state.get("past_context", ""),
+                instrument_context=initial_state.get("instrument_context", ""),
+            )
+            yield from self.static_workflow.compile().stream(fallback_state, **args)
+
+    def _execute_compiled_graph(self, graph, initial_state, args):
+        """Execute a compiled graph while preserving the existing debug behavior."""
+
+        if not self.debug:
+            return graph.invoke(initial_state, **args)
+
+        trace = []
+        last_printed = None
+        for chunk in graph.stream(initial_state, **args):
+            if chunk.get("messages"):
+                msg = chunk["messages"][-1]
+                signature = (type(msg).__name__, getattr(msg, "content", None))
+                if signature != last_printed:
+                    msg.pretty_print()
+                    last_printed = signature
+            trace.append(chunk)
+        final_state = {}
+        for chunk in trace:
+            final_state.update(chunk)
+        return final_state
+
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM and the
@@ -429,7 +573,18 @@ class TradingAgentsGraph:
             past_context=past_context,
             instrument_context=instrument_context,
         )
-        args = self.propagator.get_graph_args()
+        runtime_callbacks = getattr(self, "runtime_callbacks", None)
+        args = self.propagator.get_graph_args(callbacks=runtime_callbacks or None)
+        if self.trajectory_recorder is not None:
+            self.scheduler_fallback_reason = None
+            self.trajectory_recorder.begin(
+                task_id=f"{company_name}:{trade_date}:{asset_type}",
+                ticker=company_name,
+                trade_date=str(trade_date),
+                asset_type=asset_type,
+                policy_id=self.scheduler_policy.policy_id,
+                metadata={"source": "learned_rollout"},
+            )
 
         # Inject thread_id so same ticker+date+graph-shape resumes; a different
         # date or graph shape starts fresh (#1089).
@@ -437,27 +592,74 @@ class TradingAgentsGraph:
             tid = thread_id(company_name, str(trade_date), self._run_signature(asset_type))
             args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
 
-        if self.debug:
-            trace = []
-            last_printed = None
-            for chunk in self.graph.stream(init_agent_state, **args):
-                if chunk["messages"]:
-                    msg = chunk["messages"][-1]
-                    # Nodes after the trader don't append to messages, so the
-                    # same trailing message repeats across chunks. Print it only
-                    # when it changes (#1027); the trace/state merge is unchanged.
-                    signature = (type(msg).__name__, getattr(msg, "content", None))
-                    if signature != last_printed:
-                        msg.pretty_print()
-                        last_printed = signature
-                    trace.append(chunk)
-            # Streamed chunks are per-node deltas. Merge them so the returned
-            # state matches what graph.invoke() yields in the non-debug path.
-            final_state = {}
-            for chunk in trace:
-                final_state.update(chunk)
-        else:
-            final_state = self.graph.invoke(init_agent_state, **args)
+        try:
+            final_state = self._execute_compiled_graph(self.graph, init_agent_state, args)
+        except SchedulerFallbackError as exc:
+            if self.scheduler_mode != "learned" or not self.config.get(
+                "scheduler_fallback_enabled", True
+            ):
+                raise
+            logger.warning(
+                "Learned scheduler failed (%s); restarting the task with the static graph",
+                exc.reason,
+            )
+            self.scheduler_fallback_reason = exc.reason
+            if self.trajectory_recorder is not None:
+                self.trajectory_recorder.finalize(
+                    {}, status="fallback", fallback_reason=exc.reason
+                )
+            fallback_state = self.propagator.create_initial_state(
+                company_name,
+                trade_date,
+                asset_type=asset_type,
+                past_context=past_context,
+                instrument_context=instrument_context,
+            )
+            fallback_graph = self.static_workflow.compile()
+            fallback_args = self.propagator.get_graph_args()
+            final_state = self._execute_compiled_graph(
+                fallback_graph, fallback_state, fallback_args
+            )
+        except Exception as exc:
+            if (
+                self.trajectory_recorder is not None
+                and self.trajectory_recorder.current is not None
+                and self.trajectory_recorder.current.status == "running"
+            ):
+                self.trajectory_recorder.finalize(
+                    {},
+                    status="failed",
+                    failure_reason=f"expert_or_graph_error:{type(exc).__name__}",
+                )
+            raise
+
+        if (
+            self.scheduler_mode == "learned"
+            and self.scheduler_fallback_reason is None
+            and self.trajectory_recorder is not None
+        ):
+            verification = verify_trajectory(
+                self.trajectory_recorder.current,
+                final_state,
+            )
+            status = "accepted" if verification.accepted else "rejected"
+            failure_reason = None if verification.accepted else verification.reason
+            self.trajectory_recorder.finalize(
+                final_state,
+                status=status,
+                failure_reason=failure_reason,
+                verifier_version=verification.verifier_version,
+            )
+
+        if self.requested_scheduler_mode == "learned" and self.scheduler_fallback_reason:
+            final_state = dict(final_state)
+            final_state.update(
+                {
+                    "scheduler_requested_mode": "learned",
+                    "scheduler_mode": "static",
+                    "scheduler_fallback_reason": self.scheduler_fallback_reason,
+                }
+            )
 
         # Store current state for reflection.
         self.curr_state = final_state

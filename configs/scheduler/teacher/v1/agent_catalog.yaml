@@ -1,0 +1,18 @@
+{
+  "version": "v1",
+  "source": "tradingagents.scheduler.agent_registry.AGENT_REGISTRY",
+  "agents": [
+    {"id": "market", "action": "<ACT_MARKET>", "writes": ["market_report"], "purpose": "technical market evidence"},
+    {"id": "sentiment", "action": "<ACT_SENTIMENT>", "writes": ["sentiment_report"], "purpose": "news and social sentiment evidence"},
+    {"id": "news", "action": "<ACT_NEWS>", "writes": ["news_report"], "purpose": "company, global, macro, insider, and prediction-market news"},
+    {"id": "fundamentals", "action": "<ACT_FUNDAMENTALS>", "writes": ["fundamentals_report"], "purpose": "financial statements and valuation evidence"},
+    {"id": "bull", "action": "<ACT_BULL>", "writes": ["investment_debate_state"], "purpose": "bullish research case"},
+    {"id": "bear", "action": "<ACT_BEAR>", "writes": ["investment_debate_state"], "purpose": "bearish research case"},
+    {"id": "research_manager", "action": "<ACT_RESEARCH_MANAGER>", "writes": ["investment_plan"], "purpose": "research debate judgment"},
+    {"id": "trader", "action": "<ACT_TRADER>", "writes": ["trader_investment_plan"], "purpose": "Buy, Hold, or Sell proposal"},
+    {"id": "aggressive", "action": "<ACT_AGGRESSIVE>", "writes": ["risk_debate_state"], "purpose": "aggressive risk view"},
+    {"id": "conservative", "action": "<ACT_CONSERVATIVE>", "writes": ["risk_debate_state"], "purpose": "downside and capital-preservation view"},
+    {"id": "neutral", "action": "<ACT_NEUTRAL>", "writes": ["risk_debate_state"], "purpose": "balanced risk view"},
+    {"id": "portfolio_manager", "action": "<ACT_PORTFOLIO_MANAGER>", "writes": ["final_trade_decision"], "purpose": "final portfolio rating"}
+  ]
+}

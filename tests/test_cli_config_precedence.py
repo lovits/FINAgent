@@ -67,3 +67,11 @@ def test_checkpoint_flag_overrides_env(flag):
     with mock.patch.object(m, "DEFAULT_CONFIG", patched):
         cfg = m._build_run_config(SELECTIONS, checkpoint=flag)
     assert cfg["checkpoint_enabled"] is flag
+
+
+def test_scheduler_mode_override_is_explicit_and_validated():
+    cfg = m._build_run_config(SELECTIONS, checkpoint=None, scheduler_mode="learned")
+    assert cfg["scheduler_mode"] == "learned"
+
+    with pytest.raises(ValueError, match="scheduler_mode"):
+        m._build_run_config(SELECTIONS, checkpoint=None, scheduler_mode="other")

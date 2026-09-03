@@ -1,0 +1,4 @@
+{"case":"premature_stop","state":"only market report exists","invalid_action":"<ACT_STOP>","failure_reason":"final trade decision is missing","corrected_actions":["<ACT_NEWS>","<ACT_FUNDAMENTALS>","<ACT_BULL>"]}
+{"case":"trader_without_plan","state":"investment plan empty","invalid_action":"<ACT_TRADER>","failure_reason":"Trader requires investment_plan","corrected_actions":["<ACT_BULL>","<ACT_BEAR>"]}
+{"case":"portfolio_without_risk","state":"trader plan exists; risk history empty","invalid_action":"<ACT_PORTFOLIO_MANAGER>","failure_reason":"Portfolio Manager requires risk history","corrected_actions":["<ACT_AGGRESSIVE>","<ACT_CONSERVATIVE>","<ACT_NEUTRAL>"]}
+{"case":"unknown_agent","state":"any","invalid_action":"<ACT_SEARCH>","failure_reason":"action is not registered","corrected_actions":["choose one token from VALID_ACTIONS"]}
