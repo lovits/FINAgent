@@ -119,9 +119,9 @@ def setup_scheduler_graph(
 - Researcher、Manager、Trader和Risk Agent完成后回Scheduler；
 - STOP进入END。
 
-### 修改`tradingagents/agents/utils/agent_states.py`
+### 新增`tradingagents/scheduler/state.py`
 
-增加运行字段：
+定义继承原`AgentState`的`SchedulerAgentState`，增加运行字段：
 
 ```text
 scheduler_action
@@ -134,7 +134,7 @@ scheduler_last_state_signature
 scheduler_agent_calls
 ```
 
-不修改已有报告、Debate、Trader和Portfolio字段。
+原`tradingagents/agents/utils/agent_states.py`保持不变；Static图继续使用原`AgentState`，只有Scheduler动态图使用扩展状态。
 
 ### 修改`tradingagents/graph/trading_graph.py`
 
@@ -144,7 +144,7 @@ scheduler_agent_calls
 - Policy Factory；
 - Static或Scheduler图装配；
 - Scheduler Recorder；
-- 模式进入checkpoint签名；
+- 仅动态模式把模式写入checkpoint签名，Static签名保持向后兼容；
 - Learned加载失败与运行失败的Static回退；
 - 三模式统一输出。
 

@@ -418,20 +418,20 @@ class TradingAgentsGraph:
         selection, debate/risk depth, or asset mode starts fresh instead of
         silently continuing the previous graph (#1089).
         """
-        return "|".join([
+        signature_parts = [
             "analysts=" + ",".join(self.selected_analysts),
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
-            "orchestration="
-            + str(
-                getattr(
-                    self,
-                    "orchestration_mode",
-                    self.config.get("orchestration_mode", "static"),
-                )
-            ),
-        ])
+        ]
+        mode = getattr(
+            self,
+            "orchestration_mode",
+            self.config.get("orchestration_mode", "static"),
+        )
+        if mode != "static":
+            signature_parts.append(f"orchestration={mode}")
+        return "|".join(signature_parts)
 
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):
         """Run the trading agents graph for a company on a specific date.
@@ -468,6 +468,8 @@ class TradingAgentsGraph:
                 logger.info("Starting fresh for %s on %s", company_name, trade_date)
 
         try:
+            if self.orchestration_mode == "static":
+                return self._run_graph(company_name, trade_date, asset_type=asset_type)
             try:
                 return self._run_graph(company_name, trade_date, asset_type=asset_type)
             except SchedulerRuntimeError as exc:
@@ -554,11 +556,31 @@ class TradingAgentsGraph:
 
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
         """Execute the graph and write the resulting state to disk and memory log."""
-        init_agent_state = self.create_initial_state(
-            company_name,
-            str(trade_date),
-            asset_type=asset_type,
-        )
+        if self.orchestration_mode == "static":
+            # Preserve the original Static initialization path byte-for-byte in
+            # behavior. Scheduler state is injected only into dynamic runs.
+            past_context = self.memory_log.get_past_context(company_name)
+            instrument_context = self.resolve_instrument_context(company_name, asset_type)
+            init_agent_state = self.propagator.create_initial_state(
+                company_name,
+                trade_date,
+                asset_type=asset_type,
+                past_context=past_context,
+                instrument_context=instrument_context,
+            )
+            if self.scheduler_fallback_reason:
+                init_agent_state.update(
+                    {
+                        "scheduler_requested_mode": self.requested_orchestration_mode,
+                        "scheduler_fallback_reason": self.scheduler_fallback_reason,
+                    }
+                )
+        else:
+            init_agent_state = self.create_initial_state(
+                company_name,
+                str(trade_date),
+                asset_type=asset_type,
+            )
         args = self.propagator.get_graph_args()
 
         # Inject thread_id so same ticker+date+graph-shape resumes; a different

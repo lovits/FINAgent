@@ -105,3 +105,14 @@ def test_checkpoint_signature_includes_orchestration_mode() -> None:
     graph.config = {"max_debate_rounds": 1, "max_risk_discuss_rounds": 1}
 
     assert "orchestration=teacher" in graph._run_signature("stock")
+
+
+def test_static_checkpoint_signature_stays_backward_compatible() -> None:
+    graph = object.__new__(TradingAgentsGraph)
+    graph.selected_analysts = ("market", "news")
+    graph.orchestration_mode = "static"
+    graph.config = {"max_debate_rounds": 1, "max_risk_discuss_rounds": 1}
+
+    assert graph._run_signature("stock") == (
+        "analysts=market,news|debate=1|risk=1|asset=stock"
+    )

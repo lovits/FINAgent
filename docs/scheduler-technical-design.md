@@ -752,12 +752,13 @@ AutoDL首次Smoke通过后生成精确lock文件，训练Manifest记录相同版
 
 | 文件 | 修改内容 |
 |---|---|
-| `tradingagents/graph/setup.py` | 保留Static构图，新增Scheduler动态图构图 |
+| `tradingagents/graph/setup.py` | 原`setup_graph()`保持原样，仅追加独立Scheduler动态图构图 |
 | `tradingagents/graph/trading_graph.py` | 解析模式、装配Policy、Recorder和fallback |
-| `tradingagents/agents/utils/agent_states.py` | 增加Scheduler运行字段 |
 | `tradingagents/default_config.py` | 增加Scheduler配置 |
 | `cli/main.py` | 增加三模式参数 |
 | `pyproject.toml` | 增加`scheduler-train`可选依赖 |
+
+`tradingagents/agents/utils/agent_states.py`不修改。Static继续使用原`AgentState`和原checkpoint签名；动态模式使用独立的`SchedulerAgentState`。
 
 ### 13.2 新运行模块
 
@@ -768,6 +769,7 @@ tradingagents/scheduler/
 ├── contracts.py
 ├── action_mask.py
 ├── prompt.py
+├── state.py
 ├── scheduler_node.py
 ├── teacher_policy.py
 ├── hf_policy.py
@@ -784,6 +786,7 @@ tradingagents/scheduler/
 | `contracts.py` | Context、Decision、Step与Trajectory数据类 |
 | `action_mask.py` | 确定性合法动作 |
 | `prompt.py` | Teacher与Qwen共用语义模板 |
+| `state.py` | 只供动态图使用的Scheduler状态扩展 |
 | `scheduler_node.py` | LangGraph中央节点和路由 |
 | `teacher_policy.py` | API调用、JSON校验和一次纠正 |
 | `hf_policy.py` | 本地模型动作logits、采样与logprob |

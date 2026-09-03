@@ -1,7 +1,9 @@
+from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.graph.conditional_logic import ConditionalLogic
 from tradingagents.graph.setup import GraphSetup
 from tradingagents.scheduler.actions import SchedulerAction
 from tradingagents.scheduler.policy import CallableSchedulerPolicy
+from tradingagents.scheduler.state import SchedulerAgentState
 
 
 class _DummyLLM:
@@ -33,6 +35,11 @@ def test_static_graph_keeps_original_entry_and_has_no_scheduler() -> None:
     assert "Scheduler" not in graph.nodes
     assert ("__start__", "Market Analyst") in edges
     assert ("Portfolio Manager", "__end__") in edges
+
+
+def test_scheduler_fields_do_not_modify_original_agent_state() -> None:
+    assert "scheduler_action" not in AgentState.__annotations__
+    assert "scheduler_action" in SchedulerAgentState.__annotations__
 
 
 def test_dynamic_graph_routes_experts_back_to_scheduler() -> None:

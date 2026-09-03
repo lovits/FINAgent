@@ -11,6 +11,7 @@ from .contracts import (
 from .recorder import TrajectoryRecorder
 from .registry import AgentSpec, registry_for_analysts
 from .scheduler_node import SchedulerNode, SchedulerRuntimeError
+from .state import SchedulerAgentState
 from .store import TrajectoryStore
 from .teacher_policy import (
     OpenRouterTeacherGateway,
@@ -29,6 +30,7 @@ __all__ = [
     "SchedulerPolicy",
     "SchedulerNode",
     "SchedulerRuntimeError",
+    "SchedulerAgentState",
     "SchedulerStep",
     "SchedulerTrajectory",
     "OpenRouterTeacherGateway",
