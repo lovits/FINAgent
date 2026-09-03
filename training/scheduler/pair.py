@@ -47,6 +47,17 @@ def pair_trajectories(
     if teacher.audit_status not in {"accepted", "warning"}:
         reasons.append("teacher_not_accepted")
 
+    for field in (
+        "task_dataset_version",
+        "information_cutoff",
+        "expert_config_hash",
+        "scheduler_max_steps",
+    ):
+        static_value = static.provenance.get(field)
+        teacher_value = teacher.provenance.get(field)
+        if static_value is None or teacher_value is None or static_value != teacher_value:
+            reasons.append(f"provenance_mismatch:{field}")
+
     static_trader = parse_trader_action(
         static.final_outputs.get("trader_investment_plan")
     )
@@ -62,7 +73,9 @@ def pair_trajectories(
         reasons.append("portfolio_rating_too_far")
 
     cost_ratio = _cost_ratio(static.cost_total, teacher.cost_total)
-    if cost_ratio is not None and cost_ratio > max_cost_ratio:
+    if cost_ratio is None:
+        reasons.append("teacher_cost_uncomparable")
+    elif cost_ratio > max_cost_ratio:
         reasons.append("teacher_cost_too_high")
 
     return PairComparison(

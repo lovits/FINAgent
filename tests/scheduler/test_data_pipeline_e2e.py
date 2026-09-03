@@ -13,6 +13,7 @@ def _task() -> dict:
         "trade_date": "2026-01-05",
         "asset_type": "stock",
         "split": "train",
+        "dataset_version": "scheduler-tasks-v1",
         "data_snapshot_id": "snapshot-1",
     }
 
@@ -67,6 +68,13 @@ class _Environment:
             "investment_plan": final_state["investment_plan"],
             "trader_investment_plan": final_state["trader_investment_plan"],
             "final_trade_decision": final_state["final_trade_decision"],
+        }
+        trajectory.provenance = {
+            "task_split": task["split"],
+            "task_dataset_version": task["dataset_version"],
+            "information_cutoff": "2026-01-05T23:59:59Z",
+            "expert_config_hash": "expert-config-1",
+            "scheduler_max_steps": 16,
         }
         trajectory.execution_status = "completed"
         return EnvironmentRunResult(trajectory, final_state)

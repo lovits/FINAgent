@@ -60,6 +60,24 @@ def test_collator_masks_actions_and_rejects_overflow() -> None:
         collator([{**_row(0), "input_text": "x" * 40}])
 
 
+def test_collator_left_pads_so_last_logit_is_always_a_real_token() -> None:
+    tokenizer = FakeTokenizer()
+    register_action_tokens(tokenizer)
+    collator = MaskedActionCollator(tokenizer, max_length=32)
+
+    batch = collator(
+        [
+            {**_row(0), "input_text": "x"},
+            {**_row(1), "input_text": "longer"},
+        ]
+    )
+
+    assert batch["attention_mask"][0, 0].item() == 0
+    assert batch["attention_mask"][0, -1].item() == 1
+    assert batch["attention_mask"][1].all()
+    assert batch["prediction_indices"].tolist() == [5, 5]
+
+
 def test_masked_cross_entropy_ignores_invalid_high_logit() -> None:
     tokenizer = FakeTokenizer()
     register_action_tokens(tokenizer)

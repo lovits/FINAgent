@@ -95,7 +95,7 @@ GRPO再优化：
 
 Qwen输入统一通过`tokenizer.apply_chat_template(..., enable_thinking=False, add_generation_prompt=True)`构造。Scheduler不使用自由文本`generate()`生成理由；运行时读取Chat Template末尾位置的logits，只抽取当前`valid_actions`对应的Token，再进行greedy选择或温度采样。
 
-Qwen前向统一设置`logits_to_keep=1`，只生成最后决策位置的词表logits，避免在32K序列上构造所有位置的完整词表张量。
+Qwen前向统一设置`logits_to_keep=1`，只生成最后决策位置的词表logits，避免在32K序列上构造所有位置的完整词表张量。Collator使用左填充，保证micro-batch内每个样本的最后位置都是真实generation prompt而不是PAD。
 
 Qwen3的Thinking内容不进入训练标签，SFT、GRPO和在线推理复用同一Prompt Builder与Chat Template参数。
 

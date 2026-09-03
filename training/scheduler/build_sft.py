@@ -95,6 +95,7 @@ def write_sft_dataset(
     *,
     overflow_count: int = 0,
     source_run_ids: Sequence[str] = (),
+    task_split: str | None = None,
 ) -> dict[str, Any]:
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +107,7 @@ def write_sft_dataset(
         examples,
         overflow_count=overflow_count,
         source_run_ids=source_run_ids,
+        task_split=task_split,
     )
     write_json_atomic(destination.with_suffix(".manifest.json"), manifest)
     return manifest
@@ -116,10 +118,12 @@ def _manifest(
     *,
     overflow_count: int,
     source_run_ids: Sequence[str],
+    task_split: str | None,
 ) -> dict[str, Any]:
     lengths = sorted(example.input_token_count for example in examples)
     return {
         "schema_version": "scheduler-sft-manifest-v1",
+        "task_split": task_split,
         "sample_count": len(examples),
         "task_count": len({example.task_id for example in examples}),
         "source_counts": dict(Counter(example.source for example in examples)),

@@ -26,6 +26,7 @@ def _trajectory(identifier: str, mode: str) -> SchedulerTrajectory:
             state_after={"news_report": "done"},
         )
     )
+    trajectory.provenance = {"task_split": "train"}
     return trajectory
 
 
@@ -63,6 +64,20 @@ def test_rejects_conflicting_labels_for_identical_input() -> None:
     teacher.steps[0].agent_node = "Market Analyst"
 
     with pytest.raises(ValueError, match="conflicting actions"):
+        prepare_sft_dataset(
+            [static],
+            [teacher],
+            verified_ids={"teacher-1"},
+            token_counter=len,
+        )
+
+
+def test_rejects_mixed_train_and_validation_sources() -> None:
+    static = _trajectory("static-1", "static")
+    teacher = _trajectory("teacher-1", "teacher")
+    teacher.provenance["task_split"] = "validation"
+
+    with pytest.raises(ValueError, match="mix task splits"):
         prepare_sft_dataset(
             [static],
             [teacher],

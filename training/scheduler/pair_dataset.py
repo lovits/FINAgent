@@ -20,10 +20,17 @@ def pair_datasets(
 ) -> list[PairComparison]:
     static_by_key = _by_task_snapshot(static, expected_mode="static")
     teacher_by_key = _by_task_snapshot(teacher, expected_mode="teacher")
-    comparisons = []
-    for key in sorted(static_by_key.keys() & teacher_by_key.keys()):
-        comparisons.append(pair_trajectories(static_by_key[key], teacher_by_key[key]))
-    return comparisons
+    missing = set(static_by_key) - set(teacher_by_key)
+    unexpected = set(teacher_by_key) - set(static_by_key)
+    if missing or unexpected:
+        raise ValueError(
+            "Static/Teacher task sets are not aligned: "
+            f"missing_teacher={len(missing)}, unexpected_teacher={len(unexpected)}"
+        )
+    return [
+        pair_trajectories(static_trajectory, teacher_by_key[key])
+        for key, static_trajectory in static_by_key.items()
+    ]
 
 
 def _by_task_snapshot(

@@ -167,8 +167,8 @@ Train：
 
 ```bash
 .venv/bin/python -m training.scheduler.pair_dataset \
-  --static data/scheduler/v1/static/train/accepted.jsonl \
-  --teacher data/scheduler/v1/teacher/train/accepted.jsonl \
+  --static data/scheduler/v1/static/train/raw.jsonl \
+  --teacher data/scheduler/v1/teacher/train/raw.jsonl \
   --output data/scheduler/v1/paired/train.jsonl
 ```
 
@@ -176,8 +176,8 @@ Validation：
 
 ```bash
 .venv/bin/python -m training.scheduler.pair_dataset \
-  --static data/scheduler/v1/static/validation/accepted.jsonl \
-  --teacher data/scheduler/v1/teacher/validation/accepted.jsonl \
+  --static data/scheduler/v1/static/validation/raw.jsonl \
+  --teacher data/scheduler/v1/teacher/validation/raw.jsonl \
   --output data/scheduler/v1/paired/validation.jsonl
 ```
 

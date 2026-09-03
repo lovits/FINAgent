@@ -27,6 +27,9 @@ def prepare_sft_dataset(
     token_counter: Callable[[str], int],
     max_tokens: int = 32768,
 ) -> tuple[list[SFTExample], int]:
+    static = list(static)
+    teacher = list(teacher)
+    source_task_split(static, teacher)
     static_examples, static_overflow = build_sft_examples(
         static,
         source="static",
@@ -43,6 +46,23 @@ def prepare_sft_dataset(
     return _deduplicate([*static_examples, *teacher_examples]), (
         static_overflow + teacher_overflow
     )
+
+
+def source_task_split(
+    static: Iterable[SchedulerTrajectory],
+    teacher: Iterable[SchedulerTrajectory],
+) -> str:
+    splits = {
+        trajectory.provenance.get("task_split")
+        for trajectory in [*static, *teacher]
+    }
+    if not splits:
+        raise ValueError("SFT sources are empty")
+    if None in splits or "" in splits:
+        raise ValueError("SFT source trajectory is missing task_split provenance")
+    if len(splits) != 1:
+        raise ValueError(f"SFT sources mix task splits: {sorted(splits)}")
+    return str(next(iter(splits)))
 
 
 def _deduplicate(examples: Iterable[SFTExample]) -> list[SFTExample]:
@@ -84,6 +104,7 @@ def main() -> None:
     static = TrajectoryStore(args.static).load()
     teacher = TrajectoryStore(args.teacher).load()
     comparisons = load_comparisons(args.comparisons)
+    task_split = source_task_split(static, teacher)
     examples, overflow = prepare_sft_dataset(
         static,
         teacher,
@@ -97,6 +118,7 @@ def main() -> None:
         args.output,
         overflow_count=overflow,
         source_run_ids=run_ids,
+        task_split=task_split,
     )
     print(json.dumps(manifest, sort_keys=True))
 

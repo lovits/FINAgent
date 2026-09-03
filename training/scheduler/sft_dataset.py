@@ -124,19 +124,22 @@ class MaskedActionCollator:
         width = max(len(value["input_ids"]) for value in encoded)
         action_width = max(len(value["valid_token_ids"]) for value in encoded)
 
-        def pad(values: list[int], fill: int) -> list[int]:
-            return values + [fill] * (width - len(values))
+        def left_pad(values: list[int], fill: int) -> list[int]:
+            # Training asks Qwen for only the final logit. Left padding keeps
+            # that final position on the real generation prompt for every row.
+            return [fill] * (width - len(values)) + values
 
         return {
             "input_ids": torch.tensor(
-                [pad(value["input_ids"], self.tokenizer.pad_token_id) for value in encoded]
+                [
+                    left_pad(value["input_ids"], self.tokenizer.pad_token_id)
+                    for value in encoded
+                ]
             ),
             "attention_mask": torch.tensor(
-                [pad([1] * len(value["input_ids"]), 0) for value in encoded]
+                [left_pad([1] * len(value["input_ids"]), 0) for value in encoded]
             ),
-            "prediction_indices": torch.tensor(
-                [len(value["input_ids"]) - 1 for value in encoded]
-            ),
+            "prediction_indices": torch.full((len(encoded),), width - 1),
             "valid_action_token_ids": torch.tensor(
                 [
                     value["valid_token_ids"]

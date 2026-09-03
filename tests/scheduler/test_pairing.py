@@ -20,6 +20,12 @@ def _trajectory(identifier: str, mode: str, rating: str = "Hold") -> SchedulerTr
         "final_trade_decision": f"**Rating**: {rating}",
     }
     trajectory.cost_total = ExecutionCost(agent_calls=10, tool_calls=4)
+    trajectory.provenance = {
+        "task_dataset_version": "scheduler-tasks-v1",
+        "information_cutoff": "2026-01-05T23:59:59Z",
+        "expert_config_hash": "expert-config-1",
+        "scheduler_max_steps": 16,
+    }
     return trajectory
 
 
@@ -42,3 +48,14 @@ def test_pair_rejects_distant_rating_and_high_cost() -> None:
     assert comparison.pair_status == "rejected"
     assert "portfolio_rating_too_far" in comparison.rejection_reasons
     assert "teacher_cost_too_high" in comparison.rejection_reasons
+
+
+def test_pair_rejects_mismatched_expert_configuration() -> None:
+    static = _trajectory("static-1", "static")
+    teacher = _trajectory("teacher-1", "teacher")
+    teacher.provenance["expert_config_hash"] = "different"
+
+    comparison = pair_trajectories(static, teacher)
+
+    assert comparison.pair_status == "rejected"
+    assert "provenance_mismatch:expert_config_hash" in comparison.rejection_reasons
