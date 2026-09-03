@@ -37,6 +37,15 @@ export TRADINGAGENTS_TEACHER_MODEL='google/gemini-3.8-flash'
 
 Key不写入配置、Prompt、日志、轨迹或Git。
 
+先验证Teacher模型能够进行一次结构化Scheduler决策：
+
+```bash
+.venv/bin/python -m training.scheduler.provider_preflight \
+  --model google/gemini-3.8-flash
+```
+
+交互式LangGraph不能使用带`:batch`后缀的模型ID；Batch模型只能通过OpenRouter Batch API运行。
+
 ## 3. 准备股票列表
 
 创建一个纯文本文件，每行一个Ticker，例如：
@@ -59,6 +68,7 @@ META
   --tickers data/scheduler/tickers.txt \
   --start 2024-01-01 \
   --end 2026-08-31 \
+  --sectors data/scheduler/sectors.json \
   --output data/scheduler/v1/features.jsonl
 ```
 

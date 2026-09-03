@@ -15,6 +15,7 @@ from .build_sft import (
     verified_teacher_ids,
     write_sft_dataset,
 )
+from .model import scheduler_input_ids
 from .pair_dataset import load_comparisons
 
 
@@ -64,13 +65,7 @@ def qwen_token_counter(model_id: str, revision: str | None = None) -> Callable[[
     tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
 
     def count(input_text: str) -> int:
-        token_ids = tokenizer.apply_chat_template(
-            [{"role": "user", "content": input_text}],
-            tokenize=True,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-        return len(token_ids)
+        return len(scheduler_input_ids(tokenizer, input_text))
 
     return count
 

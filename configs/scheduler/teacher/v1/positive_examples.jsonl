@@ -1,0 +1,2 @@
+{"state_fact":"No analyst report exists yet.","valid_actions":["<ACT_MARKET>","<ACT_NEWS>"],"output":{"action":"<ACT_MARKET>"}}
+{"state_fact":"A complete final_trade_decision already exists.","valid_actions":["<ACT_STOP>"],"output":{"action":"<ACT_STOP>"}}

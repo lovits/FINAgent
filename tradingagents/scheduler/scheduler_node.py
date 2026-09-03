@@ -115,7 +115,7 @@ class SchedulerNode:
 
         if self.on_decision is not None:
             self.on_decision(context, decision)
-        next_history = [action.value for action in history]
+        next_history = [action.value for action in context.history]
         next_history.append(decision.action.value)
         return {
             "sender": SCHEDULER_NODE_NAME,

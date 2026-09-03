@@ -58,16 +58,13 @@ class HFSchedulerPolicy:
     def _distribution(self, context: SchedulerContext):
         import torch
 
+        from training.scheduler.model import scheduler_input_ids
+
         if self.adapter_name is not None:
             if not hasattr(self.model, "set_adapter"):
                 raise ValueError("adapter_name requires a PEFT model")
             self.model.set_adapter(self.adapter_name)
-        input_ids = self.tokenizer.apply_chat_template(
-            [{"role": "user", "content": context.serialized_state}],
-            tokenize=True,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
+        input_ids = scheduler_input_ids(self.tokenizer, context.serialized_state)
         if len(input_ids) > self.max_context_tokens:
             raise ValueError(
                 f"scheduler context has {len(input_ids)} tokens; "

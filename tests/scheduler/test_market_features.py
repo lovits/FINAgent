@@ -2,7 +2,11 @@ from datetime import date
 
 import pandas as pd
 
-from training.scheduler.market_features import compute_feature_rows, write_feature_rows
+from training.scheduler.market_features import (
+    _earnings_dates,
+    compute_feature_rows,
+    write_feature_rows,
+)
 
 
 def _history(days: int = 30) -> pd.DataFrame:
@@ -41,3 +45,17 @@ def test_feature_writer_creates_jsonl(tmp_path) -> None:
     target = tmp_path / "features.jsonl"
     write_feature_rows(rows, target)
     assert len(target.read_text().splitlines()) == len(rows)
+
+
+def test_earnings_fetch_respects_yahoo_limit() -> None:
+    class Stock:
+        def get_earnings_dates(self, *, limit):
+            assert limit == 100
+            return pd.DataFrame(
+                {"Reported EPS": [1.0]},
+                index=pd.to_datetime(["2026-01-25T16:00:00-05:00"]),
+            )
+
+    assert _earnings_dates(
+        Stock(), start="2026-01-01", end="2026-02-01"
+    ) == {date(2026, 1, 25)}

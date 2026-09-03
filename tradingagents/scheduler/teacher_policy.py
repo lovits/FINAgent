@@ -17,6 +17,7 @@ from .prompt import (
     build_teacher_messages,
     teacher_response_schema,
 )
+from .teacher_context import load_teacher_examples
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_TEACHER_MODEL = "google/gemini-3.8-flash"
@@ -141,10 +142,15 @@ class TeacherSchedulerPolicy:
         self,
         gateway: OpenRouterTeacherGateway,
         *,
-        positive_examples: Sequence[Mapping[str, object]] = (),
-        failure_examples: Sequence[Mapping[str, object]] = (),
+        positive_examples: Sequence[Mapping[str, object]] | None = None,
+        failure_examples: Sequence[Mapping[str, object]] | None = None,
+        context_dir: str | None = None,
     ):
         self.gateway = gateway
+        if positive_examples is None or failure_examples is None:
+            default_positive, default_failures = load_teacher_examples(context_dir)
+            positive_examples = default_positive if positive_examples is None else positive_examples
+            failure_examples = default_failures if failure_examples is None else failure_examples
         self.positive_examples = tuple(positive_examples)
         self.failure_examples = tuple(failure_examples)
         self.policy_id = f"teacher:{gateway.model}:{TEACHER_PROMPT_VERSION}"

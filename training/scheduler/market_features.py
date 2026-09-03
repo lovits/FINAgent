@@ -101,7 +101,7 @@ def fetch_feature_rows(
 
 def _earnings_dates(stock: Any, *, start: str, end: str) -> set[date]:
     try:
-        values = stock.get_earnings_dates(limit=1000)
+        values = stock.get_earnings_dates(limit=100)
     except Exception:
         return set()
     if values is None or values.empty:

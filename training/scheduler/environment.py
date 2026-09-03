@@ -99,6 +99,7 @@ class TradingAgentsSchedulerEnvironment:
                 "seed_family": task.get("seed_family"),
                 "sector": task.get("sector"),
                 "information_cutoff": task.get("information_cutoff"),
+                "memory_snapshot_id": task.get("memory_snapshot_id"),
             },
         )
         recorder = TrajectoryRecorder(trajectory)

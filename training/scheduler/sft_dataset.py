@@ -11,6 +11,8 @@ from typing import Any
 
 from torch.utils.data import Dataset, Sampler
 
+from .model import scheduler_input_ids
+
 
 class SchedulerSFTDataset(Dataset):
     def __init__(self, path: str | Path):
@@ -156,12 +158,7 @@ class MaskedActionCollator:
         }
 
     def _encode(self, row: dict[str, Any]) -> dict[str, Any]:
-        input_ids = self.tokenizer.apply_chat_template(
-            [{"role": "user", "content": row["input_text"]}],
-            tokenize=True,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
+        input_ids = scheduler_input_ids(self.tokenizer, row["input_text"])
         if len(input_ids) > self.max_length:
             raise ValueError(
                 f"SFT sample {row.get('sample_id')} has {len(input_ids)} tokens; "

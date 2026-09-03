@@ -6,7 +6,7 @@ import torch
 
 from tests.scheduler_helpers import FakeTokenizer
 from tradingagents.scheduler.actions import SchedulerAction
-from training.scheduler.model import register_action_tokens
+from training.scheduler.model import register_action_tokens, scheduler_input_ids
 from training.scheduler.sft_dataset import (
     HierarchicalSourceSampler,
     MaskedActionCollator,
@@ -79,3 +79,11 @@ def test_masked_cross_entropy_ignores_invalid_high_logit() -> None:
     )
     assert loss.item() < 0.2
     assert torch.argmax(logprobs, dim=1).item() == 1
+
+
+def test_chat_template_batch_encoding_is_normalized_to_token_list() -> None:
+    class BatchTokenizer(FakeTokenizer):
+        def apply_chat_template(self, messages, **kwargs):
+            return {"input_ids": [3, 4, 5], "attention_mask": [1, 1, 1]}
+
+    assert scheduler_input_ids(BatchTokenizer(), "prompt") == [3, 4, 5]

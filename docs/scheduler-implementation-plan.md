@@ -513,31 +513,31 @@ GRPO Scheduler
 
 ### 数据生成
 
-- [ ] 300任务池、60 Train、12 Validation
-- [ ] Static/Teacher独立运行
-- [ ] 每任务每路线一条轨迹
-- [ ] Memory和Checkpoint隔离
-- [ ] Teacher一次纠正
-- [ ] 轨迹审核与事后配对
-- [ ] SFT样本可回溯且无泄漏
+- [x] 300任务池、60 Train、12 Validation
+- [x] Static/Teacher独立运行
+- [x] 每任务每路线一条轨迹
+- [x] Memory和Checkpoint隔离
+- [x] Teacher一次纠正
+- [x] 轨迹审核与事后配对
+- [x] SFT样本可回溯且无泄漏
 
 ### 训练
 
 - [ ] Qwen3-1.7B固定revision下载
-- [ ] 13个单Token动作
+- [x] 13个单Token动作
 - [ ] 32K BF16 LoRA Smoke
-- [ ] Masked Action SFT
+- [x] Masked Action SFT Tiny反向更新
 - [ ] SFT真实Harness验证
-- [ ] 每任务4条GRPO Rollout
-- [ ] Reward、优势和Loss可复算
+- [x] 每任务4条GRPO Rollout Mock闭环
+- [x] Reward、优势和Loss可复算
 - [ ] 至少一次在线GRPO闭环
 
 ### 集成
 
-- [ ] Static原始图无回归
-- [ ] Teacher和Learned复用同一Scheduler图
-- [ ] Tool保持Expert内部调用
-- [ ] 三模式CLI和配置
+- [x] Static原始图无回归
+- [x] Teacher和Learned复用同一Scheduler图
+- [x] Tool保持Expert内部调用
+- [x] 三模式CLI和配置
 - [ ] Static/SFT/GRPO公平A/B
 - [ ] Adapter、Manifest、指标和轨迹产物齐全
 

@@ -22,6 +22,7 @@ from tradingagents.scheduler.teacher_policy import (
 
 from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
+from .memory_snapshot import build_memory_snapshot
 
 GENERATION_SCHEMA_VERSION = "scheduler-generation-v1"
 
@@ -54,6 +55,7 @@ def generate_trajectories(
     config: dict[str, Any],
     selected_analysts: tuple[str, ...],
     resume: bool = False,
+    memory_log_path: str | None = None,
 ) -> dict[str, int]:
     if mode not in {"static", "teacher"}:
         raise ValueError("data generation mode must be static or teacher")
@@ -67,7 +69,16 @@ def generate_trajectories(
         selected_analysts=selected_analysts,
     )
     counts = {"accepted": 0, "rejected": 0, "skipped": 0}
-    for task in tasks:
+    for source_task in tasks:
+        task = dict(source_task)
+        if memory_log_path:
+            snapshot = build_memory_snapshot(
+                memory_log_path,
+                ticker=str(task["ticker"]),
+                trade_date=str(task["trade_date"]),
+            )
+            task["past_context"] = snapshot.context
+            task["memory_snapshot_id"] = snapshot.snapshot_id
         identifier = _trajectory_id(task, mode, None if policy is None else policy.policy_id)
         if raw_store.contains(identifier):
             if not resume:
@@ -161,6 +172,7 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--run-id")
     parser.add_argument("--analysts", default="market,social,news,fundamentals")
+    parser.add_argument("--memory-log")
     args = parser.parse_args()
 
     tasks = load_tasks(args.tasks, split=args.split)
@@ -176,6 +188,7 @@ def main() -> None:
         config=_runtime_config(),
         selected_analysts=selected,
         resume=args.resume,
+        memory_log_path=args.memory_log,
     )
     print(json.dumps(counts, sort_keys=True))
 

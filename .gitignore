@@ -229,3 +229,4 @@ data/scheduler/v1/static/
 data/scheduler/v1/teacher/
 data/scheduler/v1/paired/
 data/scheduler/v1/sft/
+data/scheduler/v1/features.jsonl

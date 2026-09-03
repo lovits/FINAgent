@@ -5,6 +5,7 @@
   "reference_adapter_path": "artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best",
   "output_dir": "artifacts/scheduler/qwen3-1p7b/rollouts/iteration-001",
   "run_id": "grpo-iteration-001",
+  "reward_config_path": "configs/scheduler/reward-v1.json",
   "base_model": "Qwen/Qwen3-1.7B",
   "base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
   "group_size": 4,

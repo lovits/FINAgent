@@ -1,0 +1,17 @@
+{
+  "dataset_version": "scheduler-tasks-v1",
+  "family_counts": {
+    "earnings_window": 50,
+    "high_volatility": 50,
+    "negative_momentum": 50,
+    "positive_momentum": 50,
+    "quiet_control": 50,
+    "volume_shock": 50
+  },
+  "split_counts": {
+    "reserve": 228,
+    "train": 60,
+    "validation": 12
+  },
+  "total": 300
+}

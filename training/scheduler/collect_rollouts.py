@@ -13,6 +13,7 @@ from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
 
 from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
+from .reward import RewardConfig
 from .rollout import GroupRolloutRunner, grpo_rows, write_grpo_rows
 
 
@@ -24,6 +25,7 @@ class RolloutConfig:
     reference_adapter_path: str
     output_dir: str
     run_id: str
+    reward_config_path: str | None = "configs/scheduler/reward-v1.json"
     base_model: str = "Qwen/Qwen3-1.7B"
     base_revision: str | None = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
     group_size: int = 4
@@ -75,7 +77,16 @@ def collect(config: RolloutConfig) -> dict[str, int]:
         runtime_config,
         selected_analysts=config.selected_analysts,
     )
-    runner = GroupRolloutRunner(environment, group_size=config.group_size)
+    reward_config = RewardConfig()
+    if config.reward_config_path:
+        reward_config = RewardConfig(
+            **json.loads(Path(config.reward_config_path).read_text(encoding="utf-8"))
+        )
+    runner = GroupRolloutRunner(
+        environment,
+        group_size=config.group_size,
+        reward_config=reward_config,
+    )
     trajectories = []
     rows = []
     for index, task in enumerate(tasks):
