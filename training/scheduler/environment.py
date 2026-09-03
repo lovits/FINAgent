@@ -175,6 +175,7 @@ class TradingAgentsSchedulerEnvironment:
         pending_updates: list[tuple[str, object, dict[str, Any], float]] = []
         observation_ref: str | None = None
         pending_tool_calls = 0
+        tool_event_cursor = 0
         decision_started: float | None = None
         cost_baseline = CostSnapshot()
         arguments = graph.propagator.get_graph_args(callbacks=[cost_tracker])
@@ -200,6 +201,10 @@ class TradingAgentsSchedulerEnvironment:
                     tool_calls=1 if node_kind == "tool" else 0,
                     latency_ms=max(0.0, (monotonic() - started_at) * 1000),
                 )
+                tool_events = []
+                if node_kind == "tool":
+                    tool_events = cost_tracker.tool_events_since(tool_event_cursor)
+                    tool_event_cursor += len(tool_events)
                 recorder.record_node_execution(
                     NodeExecution(
                         node_step_id=node_id,
@@ -208,6 +213,7 @@ class TradingAgentsSchedulerEnvironment:
                         state_before=state_before,
                         state_update=_json_safe(update),
                         state_after=deepcopy(business_state(next_state)),
+                        tool_events=tool_events,
                         cost=node_cost,
                     )
                 )

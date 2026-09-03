@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
@@ -29,3 +30,31 @@ def test_cost_tracker_ignores_unrecognized_response_shape() -> None:
     tracker = SchedulerCostCallback()
     tracker.on_llm_end(SimpleNamespace(generations=[]))
     assert tracker.snapshot().input_tokens == 0
+
+
+def test_cost_tracker_records_sanitized_tool_success_and_failure() -> None:
+    tracker = SchedulerCostCallback()
+    success_id = uuid4()
+    failure_id = uuid4()
+
+    tracker.on_tool_start({"name": "get_news"}, "secret input", run_id=success_id)
+    tracker.on_tool_end("large output", run_id=success_id)
+    tracker.on_tool_start({"name": "get_stock_data"}, "secret input", run_id=failure_id)
+    tracker.on_tool_error(ValueError("private details"), run_id=failure_id)
+
+    events = tracker.tool_events_since(0)
+    assert events == [
+        {
+            "tool_call_id": str(success_id),
+            "tool_name": "get_news",
+            "status": "succeeded",
+        },
+        {
+            "tool_call_id": str(failure_id),
+            "tool_name": "get_stock_data",
+            "status": "failed",
+            "error_type": "ValueError",
+        },
+    ]
+    assert "secret" not in str(events)
+    assert "private details" not in str(events)

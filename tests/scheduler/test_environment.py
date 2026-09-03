@@ -37,11 +37,14 @@ class _Propagator:
 
 
 class _StaticEventGraph:
-    @staticmethod
-    def stream(initial_state, **kwargs):
+    def __init__(self, callback=None):
+        self.callback = callback
+
+    def stream(self, initial_state, **kwargs):
         state = deepcopy(initial_state)
         updates = (
             ("Market Analyst", {"market_report": "market evidence"}),
+            ("tools_market", {}),
             ("Msg Clear Market", {}),
             (
                 "Bull Researcher",
@@ -73,6 +76,13 @@ class _StaticEventGraph:
             ("Portfolio Manager", {"final_trade_decision": "**Rating**: Hold"}),
         )
         for node_name, update in updates:
+            if node_name == "tools_market" and self.callback is not None:
+                self.callback.on_tool_start(
+                    {"name": "get_stock_data"},
+                    "not-recorded",
+                    run_id="tool-run-1",
+                )
+                self.callback.on_tool_end({}, run_id="tool-run-1")
             state.update(deepcopy(update))
             yield "updates", {node_name: deepcopy(update)}
             yield "values", deepcopy(state)
@@ -80,7 +90,8 @@ class _StaticEventGraph:
 
 class _FakeTradingGraph:
     def __init__(self, **kwargs):
-        self.graph = _StaticEventGraph()
+        callbacks = kwargs.get("callbacks") or []
+        self.graph = _StaticEventGraph(callbacks[0] if callbacks else None)
         self.propagator = _Propagator()
 
     @staticmethod
@@ -118,7 +129,20 @@ def test_static_environment_projects_real_nodes_into_scheduler_steps() -> None:
     assert trajectory.steps[-1].selected_action == "<ACT_STOP>"
     assert trajectory.steps[0].state_after["market_report"] == "market evidence"
     assert trajectory.final_outputs["final_trade_decision"] == "**Rating**: Hold"
-    assert len(trajectory.node_executions) == 10
+    assert len(trajectory.node_executions) == 11
+    tool_execution = next(
+        execution
+        for execution in trajectory.node_executions
+        if execution.node_name == "tools_market"
+    )
+    assert tool_execution.tool_events == [
+        {
+            "tool_call_id": "tool-run-1",
+            "tool_name": "get_stock_data",
+            "status": "succeeded",
+        }
+    ]
+    assert trajectory.cost_total.tool_calls == 1
     assert trajectory.provenance["task_dataset_version"] == "tasks-v1"
     assert trajectory.provenance["data_snapshot_id"] == "snapshot-1"
     assert trajectory.provenance["action_schema_version"] == "scheduler-actions-v1"
