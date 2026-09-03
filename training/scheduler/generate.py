@@ -14,15 +14,24 @@ from typing import Any
 from dotenv import load_dotenv
 
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.scheduler.actions import ACTION_SCHEMA_VERSION
+from tradingagents.scheduler.prompt import (
+    PROMPT_VERSION,
+    STATE_SCHEMA_VERSION,
+    TEACHER_PROMPT_VERSION,
+)
+from tradingagents.scheduler.registry import AGENT_CATALOG_VERSION
 from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
 from tradingagents.scheduler.teacher_policy import (
     OpenRouterTeacherGateway,
     TeacherSchedulerPolicy,
 )
+from tradingagents.scheduler.trajectory import TRAJECTORY_SCHEMA_VERSION
 
 from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
 from .memory_snapshot import build_memory_snapshot
+from .provenance import code_provenance, generation_config_hash
 
 GENERATION_SCHEMA_VERSION = "scheduler-generation-v1"
 
@@ -59,6 +68,7 @@ def generate_trajectories(
 ) -> dict[str, int]:
     if mode not in {"static", "teacher"}:
         raise ValueError("data generation mode must be static or teacher")
+    started_at = datetime.now(UTC).isoformat()
     output = Path(output_dir)
     raw_store = TrajectoryStore(output / "raw.jsonl")
     accepted_store = TrajectoryStore(output / "accepted.jsonl")
@@ -69,8 +79,13 @@ def generate_trajectories(
         selected_analysts=selected_analysts,
     )
     counts = {"accepted": 0, "rejected": 0, "skipped": 0}
+    task_count = 0
+    task_dataset_versions = set()
     for source_task in tasks:
         task = dict(source_task)
+        task_count += 1
+        if task.get("dataset_version"):
+            task_dataset_versions.add(str(task["dataset_version"]))
         if memory_log_path:
             snapshot = build_memory_snapshot(
                 memory_log_path,
@@ -104,15 +119,43 @@ def generate_trajectories(
             rejected_store.append(result.trajectory)
             counts["rejected"] += 1
 
+    policy_id = "static-langgraph-v1" if policy is None else policy.policy_id
+    code_metadata = code_provenance(config.get("project_dir"))
     write_json_atomic(
         output / "generation_manifest.json",
         {
             "schema_version": GENERATION_SCHEMA_VERSION,
             "run_id": run_id,
             "mode": mode,
+            "task_count": task_count,
+            "task_dataset_versions": sorted(task_dataset_versions),
             "trajectories_per_task": 1,
             "selected_analysts": list(selected_analysts),
             "teacher_model": None if policy is None else policy.gateway.model,
+            "teacher_prompt_version": (
+                TEACHER_PROMPT_VERSION if policy is not None else None
+            ),
+            "expert_models": {
+                "provider": config.get("llm_provider"),
+                "quick": config.get("quick_think_llm"),
+                "deep": config.get("deep_think_llm"),
+            },
+            "schema_versions": {
+                "trajectory": TRAJECTORY_SCHEMA_VERSION,
+                "actions": ACTION_SCHEMA_VERSION,
+                "state": STATE_SCHEMA_VERSION,
+                "agent_catalog": AGENT_CATALOG_VERSION,
+                "scheduler_prompt": PROMPT_VERSION,
+            },
+            **code_metadata,
+            "generation_config_hash": generation_config_hash(
+                config,
+                mode=mode,
+                policy_id=policy_id,
+                selected_analysts=selected_analysts,
+            ),
+            "started_at": started_at,
+            "completed_at": datetime.now(UTC).isoformat(),
             "counts": counts,
         },
     )

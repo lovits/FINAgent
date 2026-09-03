@@ -94,6 +94,10 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
     assert len((tmp_path / "accepted.jsonl").read_text().splitlines()) == 1
     manifest = json.loads((tmp_path / "generation_manifest.json").read_text())
     assert manifest["trajectories_per_task"] == 1
+    assert manifest["task_count"] == 1
+    assert manifest["schema_versions"]["actions"] == "scheduler-actions-v1"
+    assert len(manifest["generation_config_hash"]) == 64
+    assert "git_commit" in manifest
 
     resumed = generate_trajectories(
         [_task()],

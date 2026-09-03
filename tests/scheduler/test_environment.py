@@ -115,6 +115,11 @@ def test_static_environment_projects_real_nodes_into_scheduler_steps() -> None:
     assert trajectory.steps[0].state_after["market_report"] == "market evidence"
     assert trajectory.final_outputs["final_trade_decision"] == "**Rating**: Hold"
     assert len(trajectory.node_executions) == 10
+    assert trajectory.provenance["task_dataset_version"] == "tasks-v1"
+    assert trajectory.provenance["data_snapshot_id"] == "snapshot-1"
+    assert trajectory.provenance["action_schema_version"] == "scheduler-actions-v1"
+    assert trajectory.provenance["teacher_model"] is None
+    assert len(trajectory.provenance["generation_config_hash"]) == 64
 
 
 class _QueuedDecisionGraph:

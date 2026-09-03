@@ -797,23 +797,33 @@ tradingagents/scheduler/
 
 ```text
 training/scheduler/
+├── market_features.py
 ├── task_seeds.py
-├── generate_static.py
-├── generate_teacher.py
+├── environment.py
+├── generate.py
+├── provenance.py
 ├── audit.py
 ├── pair.py
+├── pair_dataset.py
 ├── build_sft.py
+├── prepare_sft.py
 ├── model.py
 ├── sft_dataset.py
+├── sft_loss.py
 ├── train_sft.py
 ├── rollout.py
+├── collect_rollouts.py
 ├── reward.py
 ├── advantage.py
 ├── grpo_dataset.py
 ├── grpo_loss.py
 ├── train_grpo.py
-└── evaluate.py
+├── evaluate.py
+├── download_model.py
+└── smoke_qwen.py
 ```
+
+`provenance.py`统一记录代码提交、任务/数据快照、Expert与Teacher模型、Prompt/Action/State/Catalog版本和不含密钥的生成配置指纹。
 
 ## 14. 配置设计
 

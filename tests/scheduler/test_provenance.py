@@ -1,0 +1,89 @@
+import json
+from types import SimpleNamespace
+
+from training.scheduler.provenance import (
+    code_provenance,
+    generation_config_hash,
+    trajectory_provenance,
+)
+
+
+def _config(**overrides):
+    return {
+        "llm_provider": "openrouter",
+        "quick_think_llm": "expert-quick",
+        "deep_think_llm": "expert-deep",
+        "teacher_model": "google/gemini-3.8-flash",
+        "scheduler_max_steps": 16,
+        **overrides,
+    }
+
+
+def test_generation_hash_is_stable_and_excludes_credentials() -> None:
+    first = generation_config_hash(
+        _config(api_key="secret-one", OPENROUTER_API_KEY="secret-two"),
+        mode="teacher",
+        policy_id="teacher-v1",
+        selected_analysts=("market", "news"),
+    )
+    second = generation_config_hash(
+        _config(api_key="different", OPENROUTER_API_KEY="also-different"),
+        mode="teacher",
+        policy_id="teacher-v1",
+        selected_analysts=("market", "news"),
+    )
+    changed_model = generation_config_hash(
+        _config(teacher_model="another-model"),
+        mode="teacher",
+        policy_id="teacher-v1",
+        selected_analysts=("market", "news"),
+    )
+
+    assert first == second
+    assert first != changed_model
+    assert len(first) == 64
+
+
+def test_trajectory_provenance_records_versions_without_secrets() -> None:
+    provenance = trajectory_provenance(
+        config=_config(OPENROUTER_API_KEY="must-not-leak"),
+        task={
+            "dataset_version": "scheduler-tasks-v1",
+            "split": "train",
+            "seed_family": "earnings_window",
+            "sector": "Technology",
+            "information_cutoff": "2026-08-27T23:59:59Z",
+            "data_snapshot_id": "snapshot-1",
+            "memory_snapshot_id": "memory-1",
+        },
+        mode="teacher",
+        policy_id="teacher-v1",
+        selected_analysts=("market", "news"),
+        code={"git_commit": "abc123", "git_dirty": False},
+    )
+
+    assert provenance["teacher_model"] == "google/gemini-3.8-flash"
+    assert provenance["task_dataset_version"] == "scheduler-tasks-v1"
+    assert provenance["data_snapshot_id"] == "snapshot-1"
+    assert provenance["action_schema_version"] == "scheduler-actions-v1"
+    assert provenance["trajectory_schema_version"] == "scheduler-trajectory-v1"
+    assert "must-not-leak" not in json.dumps(provenance)
+
+
+def test_code_provenance_degrades_to_unknown_outside_git(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "training.scheduler.provenance.subprocess.run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError()),
+    )
+
+    assert code_provenance(tmp_path) == {"git_commit": "unknown", "git_dirty": False}
+
+
+def test_code_provenance_records_commit_and_dirty_flag(monkeypatch, tmp_path) -> None:
+    outputs = iter(("abc123\n", " M tracked.py\n"))
+    monkeypatch.setattr(
+        "training.scheduler.provenance.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=next(outputs)),
+    )
+
+    assert code_provenance(tmp_path) == {"git_commit": "abc123", "git_dirty": True}

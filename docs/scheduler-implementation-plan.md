@@ -217,12 +217,16 @@ tests/scheduler/test_cost_tracking.py
 ### 新增文件
 
 ```text
+training/scheduler/market_features.py
 training/scheduler/task_seeds.py
-training/scheduler/generate_static.py
-training/scheduler/generate_teacher.py
+training/scheduler/environment.py
+training/scheduler/generate.py
+training/scheduler/provenance.py
 training/scheduler/audit.py
 training/scheduler/pair.py
+training/scheduler/pair_dataset.py
 training/scheduler/build_sft.py
+training/scheduler/prepare_sft.py
 ```
 
 ### 7.1 任务生成
@@ -261,7 +265,8 @@ tradingagents/scheduler/teacher_policy.py
 
 - 两条路线使用同一份、只包含`trade_date`之前记录的Memory快照；
 - 数据运行期间不写全局Memory Log；
-- checkpoint签名加入mode、run_id和task_id；
+- 数据生成关闭原应用checkpoint写入，使用确定性trajectory ID和JSONL幂等续跑；
+- 应用中的Static checkpoint签名保持原样，动态模式额外区分orchestration mode；
 - Static与Teacher从独立初始状态启动。
 
 ### 7.5 审核与配对
@@ -275,11 +280,12 @@ tradingagents/scheduler/teacher_policy.py
 
 ```text
 tests/scheduler/test_task_seeds.py
-tests/scheduler/test_static_generation.py
+tests/scheduler/test_environment.py
+tests/scheduler/test_generate.py
 tests/scheduler/test_teacher_policy.py
-tests/scheduler/test_teacher_correction.py
-tests/scheduler/test_memory_isolation.py
-tests/scheduler/test_checkpoint_isolation.py
+tests/scheduler/test_teacher_context.py
+tests/scheduler/test_memory_snapshot.py
+tests/scheduler/test_provenance.py
 tests/scheduler/test_audit.py
 tests/scheduler/test_pairing.py
 tests/scheduler/test_build_sft.py

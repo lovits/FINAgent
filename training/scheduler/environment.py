@@ -23,6 +23,8 @@ from tradingagents.scheduler.trajectory import (
     SchedulerTrajectory,
 )
 
+from .provenance import code_provenance, trajectory_provenance
+
 
 @dataclass(frozen=True)
 class EnvironmentRunResult:
@@ -65,6 +67,7 @@ class TradingAgentsSchedulerEnvironment:
         self.config = dict(config)
         self.selected_analysts = selected_analysts
         self.graph_factory = graph_factory
+        self.code_metadata = code_provenance(self.config.get("project_dir"))
 
     def run(
         self,
@@ -93,14 +96,14 @@ class TradingAgentsSchedulerEnvironment:
             trade_date=str(task["trade_date"]),
             asset_type=str(task.get("asset_type", "stock")),
             data_snapshot_id=task.get("data_snapshot_id"),
-            provenance={
-                "task_dataset_version": task.get("dataset_version"),
-                "task_split": task.get("split"),
-                "seed_family": task.get("seed_family"),
-                "sector": task.get("sector"),
-                "information_cutoff": task.get("information_cutoff"),
-                "memory_snapshot_id": task.get("memory_snapshot_id"),
-            },
+            provenance=trajectory_provenance(
+                config=self.config,
+                task=task,
+                mode=mode,
+                policy_id=policy_id,
+                selected_analysts=self.selected_analysts,
+                code=self.code_metadata,
+            ),
         )
         recorder = TrajectoryRecorder(trajectory)
         cost_tracker = SchedulerCostCallback()
