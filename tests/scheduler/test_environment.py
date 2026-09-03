@@ -54,12 +54,21 @@ def test_environment_runs_learned_policy_and_caches_static_reference():
         graph_factory=_FakeGraph,
     )
     policy = CallableSchedulerPolicy(lambda context: SchedulerAction.MARKET)
-    task = {"task_id": "task-1", "ticker": "NVDA", "trade_date": "2025-01-02"}
+    task = {
+        "task_id": "task-1",
+        "ticker": "NVDA",
+        "trade_date": "2025-01-02",
+        "split": "train",
+        "seed_family": "earnings_window",
+        "sector": "information_technology",
+    }
 
     first = environment.run(task, policy, seed=1)
     second = environment.run(task, policy, seed=2)
 
     assert first.trajectory.task_id == "task-1"
+    assert first.trajectory.metadata["task_split"] == "train"
+    assert first.trajectory.metadata["seed_family"] == "earnings_window"
     assert first.static_state["final_trade_decision"] == "**Rating**: Buy"
     assert second.static_state == first.static_state
     assert _FakeGraph.calls.count("static") == 1

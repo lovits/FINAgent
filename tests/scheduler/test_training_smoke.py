@@ -59,6 +59,7 @@ def test_tiny_local_model_runs_lora_sft_and_grpo_without_download(tmp_path):
         SFTTrainConfig(
             base_model=str(base),
             train_path=str(sft_data),
+            validation_path=str(sft_data),
             output_dir=str(sft_output),
             dtype="float32",
             batch_size=1,
@@ -69,6 +70,7 @@ def test_tiny_local_model_runs_lora_sft_and_grpo_without_download(tmp_path):
         )
     )
     assert sft_metrics["train_loss"] > 0
+    assert sft_metrics["validation_loss"] > 0
     assert (sft_output / "adapter_config.json").exists()
 
     grpo_data = tmp_path / "grpo.jsonl"

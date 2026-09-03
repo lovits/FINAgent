@@ -49,3 +49,4 @@ def test_group_rollout_scores_same_task_and_builds_training_rows():
     rows = grpo_rows(scored)
     assert len(rows) == 1 + 2 + 3 + 4
     assert all(row["task_id"] == "task" for row in rows)
+    assert all("reward_components" in row for row in rows)

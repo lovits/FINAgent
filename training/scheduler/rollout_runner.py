@@ -95,11 +95,13 @@ def grpo_rows(scored_rollouts: Iterable[ScoredRollout]) -> list[dict[str, Any]]:
                     "trajectory_id": trajectory.trajectory_id,
                     "task_id": trajectory.task_id,
                     "step_id": step.step_id,
+                    "trajectory_status": trajectory.status,
                     "serialized_state": step.serialized_state,
                     "valid_actions": step.valid_actions,
                     "selected_action": step.selected_action,
                     "advantage": rollout.advantage,
                     "reward": rollout.reward.total,
+                    "reward_components": rollout.reward.to_dict(),
                     "old_logprob": step.logprob,
                     "ref_logprob": float(ref_logprob),
                 }

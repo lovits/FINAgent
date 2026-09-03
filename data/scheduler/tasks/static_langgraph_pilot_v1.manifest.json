@@ -1,0 +1,80 @@
+{
+  "dataset_id": "tradingagents-static-langgraph-pilot-v1",
+  "status": "task_seed_only",
+  "created_at": "2026-09-03",
+  "market_window": [
+    "2026-04-01",
+    "2026-08-28"
+  ],
+  "task_count": 18,
+  "asset_type": "stock",
+  "design_basis": {
+    "tradingagents": "point-in-time daily multi-modal simulation",
+    "fintradebench_2026": "calibration-then-scaling and numerical audit",
+    "finance_agent_benchmark": "typed tasks plus quality-and-cost evaluation",
+    "risk_first_agent_evaluation_2026": "tool and multi-step failure records"
+  },
+  "seed_families": {
+    "earnings_window": 3,
+    "positive_momentum": 3,
+    "negative_momentum": 3,
+    "high_volatility": 3,
+    "volume_shock": 3,
+    "quiet_control": 3
+  },
+  "selection_constraints": {
+    "max_tasks_per_ticker": 2,
+    "min_calendar_days_between_same_ticker_tasks": 21,
+    "price_features_use_information_through_trade_date": true,
+    "future_returns_used_for_selection": false,
+    "latest_data_cutoff": "2026-08-28"
+  },
+  "selection_features": {
+    "trailing_return_5d": "Close[t] / Close[t-5] - 1",
+    "annualized_volatility_20d": "std(daily_return[t-19:t]) * sqrt(252)",
+    "volume_zscore_20d": "(Volume[t] - rolling_mean_20) / rolling_std_20"
+  },
+  "selection_method": {
+    "version": "v1",
+    "implementation": "training.scheduler.build_task_seeds",
+    "family_order": [
+      "earnings_window",
+      "positive_momentum",
+      "negative_momentum",
+      "high_volatility",
+      "volume_shock",
+      "quiet_control"
+    ],
+    "quiet_control_score": "abs(return_5d) + volatility_20d + 0.05 * abs(volume_zscore_20d)",
+    "silently_relax_constraints": false
+  },
+  "source_snapshot": {
+    "provider": "yfinance",
+    "retrieved_at_utc": "2026-09-03T10:08:02+00:00",
+    "package_version": "1.7.0",
+    "raw_market_data_redistributed": false
+  },
+  "files": {
+    "tasks": {
+      "name": "static_langgraph_pilot_v1.jsonl",
+      "format": "jsonl",
+      "records": 18,
+      "sha256": "0f0cf70fbbe2a102966e33ca4f5a024bad5797044860b01353f4d932778d3778"
+    }
+  },
+  "post_run_labels": [
+    "completed",
+    "evidence_conflict",
+    "data_sparse",
+    "high_risk"
+  ],
+  "trajectory_generation": {
+    "policy": "static",
+    "capture_mode": "original_compiled_static_graph_event_stream",
+    "trajectories_per_task": 1,
+    "generator": "python -m training.scheduler.generate_data",
+    "requires_fresh_model_api_credentials": true,
+    "completed": false
+  },
+  "usage_boundary": "Calibration pilot only. Review temporal integrity and trajectories before using any split as a held-out benchmark."
+}

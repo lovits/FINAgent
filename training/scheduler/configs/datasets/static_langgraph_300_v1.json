@@ -1,0 +1,89 @@
+{
+  "dataset_id": "tradingagents-static-langgraph-300-v1",
+  "market_window": ["2025-01-02", "2026-08-28"],
+  "tasks_per_family_by_split": {
+    "train": 35,
+    "validation": 7,
+    "test": 8
+  },
+  "max_tasks_per_ticker": 6,
+  "min_gap_days": 21,
+  "universe": [
+    {"ticker": "AAPL", "sector": "information_technology", "split": "train"},
+    {"ticker": "MSFT", "sector": "information_technology", "split": "train"},
+    {"ticker": "NVDA", "sector": "information_technology", "split": "train"},
+    {"ticker": "AVGO", "sector": "information_technology", "split": "train"},
+    {"ticker": "AMD", "sector": "information_technology", "split": "validation"},
+    {"ticker": "ORCL", "sector": "information_technology", "split": "test"},
+
+    {"ticker": "GOOGL", "sector": "communication_services", "split": "train"},
+    {"ticker": "META", "sector": "communication_services", "split": "train"},
+    {"ticker": "NFLX", "sector": "communication_services", "split": "train"},
+    {"ticker": "DIS", "sector": "communication_services", "split": "train"},
+    {"ticker": "TMUS", "sector": "communication_services", "split": "validation"},
+    {"ticker": "VZ", "sector": "communication_services", "split": "test"},
+
+    {"ticker": "AMZN", "sector": "consumer_discretionary", "split": "train"},
+    {"ticker": "TSLA", "sector": "consumer_discretionary", "split": "train"},
+    {"ticker": "HD", "sector": "consumer_discretionary", "split": "train"},
+    {"ticker": "MCD", "sector": "consumer_discretionary", "split": "train"},
+    {"ticker": "NKE", "sector": "consumer_discretionary", "split": "validation"},
+    {"ticker": "SBUX", "sector": "consumer_discretionary", "split": "test"},
+
+    {"ticker": "WMT", "sector": "consumer_staples", "split": "train"},
+    {"ticker": "COST", "sector": "consumer_staples", "split": "train"},
+    {"ticker": "PG", "sector": "consumer_staples", "split": "train"},
+    {"ticker": "KO", "sector": "consumer_staples", "split": "train"},
+    {"ticker": "PEP", "sector": "consumer_staples", "split": "validation"},
+    {"ticker": "CL", "sector": "consumer_staples", "split": "test"},
+
+    {"ticker": "JPM", "sector": "financials", "split": "train"},
+    {"ticker": "BAC", "sector": "financials", "split": "train"},
+    {"ticker": "GS", "sector": "financials", "split": "train"},
+    {"ticker": "MS", "sector": "financials", "split": "train"},
+    {"ticker": "V", "sector": "financials", "split": "validation"},
+    {"ticker": "MA", "sector": "financials", "split": "test"},
+
+    {"ticker": "JNJ", "sector": "health_care", "split": "train"},
+    {"ticker": "UNH", "sector": "health_care", "split": "train"},
+    {"ticker": "LLY", "sector": "health_care", "split": "train"},
+    {"ticker": "PFE", "sector": "health_care", "split": "train"},
+    {"ticker": "MRK", "sector": "health_care", "split": "validation"},
+    {"ticker": "ABBV", "sector": "health_care", "split": "test"},
+
+    {"ticker": "CAT", "sector": "industrials", "split": "train"},
+    {"ticker": "GE", "sector": "industrials", "split": "train"},
+    {"ticker": "HON", "sector": "industrials", "split": "train"},
+    {"ticker": "UPS", "sector": "industrials", "split": "train"},
+    {"ticker": "BA", "sector": "industrials", "split": "validation"},
+    {"ticker": "RTX", "sector": "industrials", "split": "test"},
+
+    {"ticker": "XOM", "sector": "energy", "split": "train"},
+    {"ticker": "CVX", "sector": "energy", "split": "train"},
+    {"ticker": "COP", "sector": "energy", "split": "train"},
+    {"ticker": "SLB", "sector": "energy", "split": "train"},
+    {"ticker": "EOG", "sector": "energy", "split": "validation"},
+    {"ticker": "MPC", "sector": "energy", "split": "test"},
+
+    {"ticker": "NEE", "sector": "utilities", "split": "train"},
+    {"ticker": "DUK", "sector": "utilities", "split": "train"},
+    {"ticker": "SO", "sector": "utilities", "split": "train"},
+    {"ticker": "AEP", "sector": "utilities", "split": "train"},
+    {"ticker": "EXC", "sector": "utilities", "split": "validation"},
+    {"ticker": "SRE", "sector": "utilities", "split": "test"},
+
+    {"ticker": "AMT", "sector": "real_estate", "split": "train"},
+    {"ticker": "PLD", "sector": "real_estate", "split": "train"},
+    {"ticker": "EQIX", "sector": "real_estate", "split": "train"},
+    {"ticker": "O", "sector": "real_estate", "split": "train"},
+    {"ticker": "SPG", "sector": "real_estate", "split": "validation"},
+    {"ticker": "PSA", "sector": "real_estate", "split": "test"},
+
+    {"ticker": "LIN", "sector": "materials", "split": "train"},
+    {"ticker": "APD", "sector": "materials", "split": "train"},
+    {"ticker": "SHW", "sector": "materials", "split": "train"},
+    {"ticker": "ECL", "sector": "materials", "split": "train"},
+    {"ticker": "FCX", "sector": "materials", "split": "validation"},
+    {"ticker": "NEM", "sector": "materials", "split": "test"}
+  ]
+}
