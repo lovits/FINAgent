@@ -176,30 +176,40 @@ class TradingAgentsSchedulerEnvironment:
         observation_ref: str | None = None
         pending_tool_calls = 0
         tool_event_cursor = 0
-        decision_started: float | None = None
+        pending_latency_ms = 0.0
         cost_baseline = CostSnapshot()
         arguments = graph.propagator.get_graph_args(callbacks=[cost_tracker])
         arguments["stream_mode"] = ["updates", "values"]
+        waiting_since = monotonic()
 
         for stream_mode, payload in graph.graph.stream(initial_state, **arguments):
+            received_at = monotonic()
+            event_latency_ms = max(0.0, (received_at - waiting_since) * 1000)
             if stream_mode == "updates":
                 for node_name, update in payload.items():
                     if mode == "static" and node_name in ACTION_BY_NODE:
                         self._start_static_decision(current_state, node_name, recorder)
                     pending_updates.append(
-                        (node_name, update, deepcopy(business_state(current_state)), monotonic())
+                        (
+                            node_name,
+                            update,
+                            deepcopy(business_state(current_state)),
+                            event_latency_ms,
+                        )
                     )
+                waiting_since = monotonic()
                 continue
             if stream_mode != "values":
+                waiting_since = monotonic()
                 continue
 
             next_state = dict(payload)
-            for node_name, update, state_before, started_at in pending_updates:
+            for node_name, update, state_before, node_latency_ms in pending_updates:
                 node_id = len(recorder.trajectory.node_executions)
                 node_kind = _node_type(node_name)
                 node_cost = ExecutionCost(
                     tool_calls=1 if node_kind == "tool" else 0,
-                    latency_ms=max(0.0, (monotonic() - started_at) * 1000),
+                    latency_ms=node_latency_ms,
                 )
                 tool_events = []
                 if node_kind == "tool":
@@ -222,8 +232,8 @@ class TradingAgentsSchedulerEnvironment:
                         raise ValueError("Scheduler node emitted no policy decision")
                     context, decision = decision_queue.pop(0)
                     recorder.record_decision(context, decision)
-                if recorder.has_pending_observation and decision_started is None:
-                    decision_started = started_at
+                if recorder.has_pending_observation:
+                    pending_latency_ms += node_latency_ms
                 if node_kind == "tool" and recorder.has_pending_observation:
                     pending_tool_calls += 1
                 if node_name == recorder.pending_agent_node:
@@ -238,18 +248,16 @@ class TradingAgentsSchedulerEnvironment:
                             tool_calls=max(pending_tool_calls, measured_cost.tool_calls),
                             input_tokens=measured_cost.input_tokens,
                             output_tokens=measured_cost.output_tokens,
-                            latency_ms=max(
-                                0.0,
-                                (monotonic() - (decision_started or started_at)) * 1000,
-                            ),
+                            latency_ms=pending_latency_ms,
                         ),
                     )
                     observation_ref = None
                     pending_tool_calls = 0
-                    decision_started = None
+                    pending_latency_ms = 0.0
                     cost_baseline = cost_tracker.snapshot()
             pending_updates.clear()
             current_state = next_state
+            waiting_since = monotonic()
         if decision_queue:
             raise ValueError("unconsumed scheduler policy decisions remain after graph execution")
         return current_state
