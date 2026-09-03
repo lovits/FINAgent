@@ -4,7 +4,6 @@
 > 文档状态：方案已冻结；离线代码框架已实现，真实数据生成与基模训练未执行
 > 目标版本：TradingAgents 0.3.1 兼容改造
 > 更新日期：2026-09-03
-> 轨迹采集、审核、SFT和GRPO的最新可执行说明见[`scheduler-trajectory-sft-grpo-pipeline.md`](scheduler-trajectory-sft-grpo-pipeline.md)。
 
 ## 1. 摘要
 
@@ -680,20 +679,18 @@ Scheduler 不需要读取所有原始 ToolMessage。状态序列化只保留：
 }
 ```
 
-任务数据来自历史 ticker/date 组合。第一阶段使用18条校准任务；扩展阶段使用300条、66只股票、ticker-disjoint的Train/Validation/Test任务池。可执行方法和冻结清单分别见[`static-langgraph-dataset-construction.md`](static-langgraph-dataset-construction.md)与[`static-langgraph-300-dataset.md`](static-langgraph-300-dataset.md)。
+任务数据来自历史 ticker/date 组合。训练、验证和 A/B 测试使用不重叠的任务清单。项目第一版不要求大规模样本，规模由实际 API 和算力预算决定。
 
-任务种子不使用LLM生成，而是由`training/scheduler/build_task_seeds.py`从point-in-time历史特征构建。六类是覆盖市场状态的抽样层，不是交易答案：
+任务集需要覆盖不同的信息需求，而不是只随机抽取相似股票：
 
-| 抽样层 | 只使用决策日及以前的选择依据 | 主要覆盖的原Agent逻辑 |
+| 任务类型 | 主要特征 | 希望覆盖的调度行为 |
 |---|---|---|
-| `earnings_window` | 财报日历 | Fundamentals、News、Research Manager |
-| `positive_momentum` | 过去5日收益较高 | Market、Bull、Risk |
-| `negative_momentum` | 过去5日收益较低 | Market、Bear、Risk |
-| `high_volatility` | 过去20日历史波动较高 | Market、三类Risk、Portfolio Manager |
-| `volume_shock` | 当日成交量相对20日窗口异常 | Market、News、Sentiment |
-| `quiet_control` | 低动量、低波动、正常成交量 | 固定图的冗余调用基线 |
-
-`evidence_conflict`、`data_sparse`和流程失败不是预先猜测的任务类别；它们必须在Static LangGraph真实运行后，根据报告、Tool事件和完整性检查作为后验标签写入。
+| 技术面主导 | 趋势或波动信号明显，新闻较少 | Scheduler 能识别 Market 的高价值，避免无效新闻调用 |
+| 新闻事件主导 | 财报、产品、监管、并购或宏观事件 | Scheduler 能优先调用 News/Sentiment |
+| 基本面主导 | 估值、收入、利润、现金流变化突出 | Scheduler 能优先调用 Fundamentals |
+| 证据冲突 | 技术面、新闻、基本面方向不一致 | Scheduler 能增加 Bull/Bear 或相关补充分析 |
+| 信息稀缺 | 新闻、社交或某些 vendor 数据不可用 | Scheduler 能绕过低信息 Agent，而不是重复调用 |
+| 风险敏感 | 高波动、快速涨跌或 Trader plan 较激进 | Scheduler 能选择合适的 Risk Agent |
 
 数据划分原则：
 
@@ -705,98 +702,82 @@ test：只用于最终 Static/Learned A/B，不参与蒸馏和 RL
 
 为了避免同一 ticker/date 的近似副本同时出现在训练和测试中，任务清单应按 ticker 或时间块分组后再切分。该要求用于保证 A/B 结果可解释，不要求论文级市场泛化实验。
 
-### 7.2 Static轨迹中的Scheduler监督样本
-
-原Static图本身没有Scheduler节点，因此`static_trace.py`同时保存两层记录：
-
-```json
-{
-  "node_steps": [
-    {"node": "Market Analyst", "node_type": "expert_agent", "state_before": {}, "state_after": {}}
-  ],
-  "scheduler_examples": [
-    {
-      "step_id": 0,
-      "input_text": "<bounded AgentState>",
-      "valid_actions": ["<ACT_MARKET>", "<ACT_NEWS>"],
-      "target_action": "<ACT_MARKET>",
-      "source_node": "Market Analyst",
-      "action_valid": true
-    }
-  ]
-}
-```
-
-`node_steps`用于审计真实LangGraph执行；`scheduler_examples`把实际Static顺序投影到Learned Scheduler的动作空间。Analyst内部的ToolNode往返不会被误当成第二次中央调度动作。
-
-### 7.3 Learned Scheduler轨迹
-
-Learned模式使用代码中的`TrajectoryStep`和`SchedulerTrajectory`：
+### 7.2 Scheduler Transition
 
 ```python
 @dataclass
-class TrajectoryStep:
-    step_id: int
-    serialized_state: str
-    valid_actions: list[str]
-    selected_action: str
-    policy_id: str
-    agent_node: str | None
-    logprob: float | None
+class SchedulerTransition:
+    task_id: str
+    step_index: int
+    scheduler_input: str
+    valid_action_ids: list[int]
+    action_id: int
+    old_logprob: float
+    agent_name: str
+    observation_ref: str
+    agent_calls: int
     tool_calls: int
     input_tokens: int
     output_tokens: int
     latency_ms: float
-    error: str | None
+    done: bool
+```
 
+### 7.3 Scheduler Trajectory
+
+```python
 @dataclass
 class SchedulerTrajectory:
     trajectory_id: str
     task_id: str
-    run_id: str
-    mode: str
-    policy_id: str
-    steps: list[TrajectoryStep]
-    investment_plan: str
-    trader_result: str
-    final_decision: str
-    reward: dict[str, float]
-    failure_reason: str | None
+    policy_version: str
+    transitions: list[SchedulerTransition]
+    trader_action: str | None
+    portfolio_rating: str | None
+    completed: bool
     fallback_reason: str | None
+    total_agent_calls: int
+    total_tool_calls: int
+    total_tokens: int
+    total_latency_ms: float
+    reward_components: dict[str, float]
+    total_reward: float
 ```
-
-`build_sft_dataset.py`把Static和Learned两种输入统一转换为`input_text + target_action + metadata`，训练器不直接依赖两种原始轨迹的存储差异。
 
 ### 7.4 Tool trace 边界
 
-Static采集器保存：
+Tool trace 保存：
 
 - 工具名称；
-- `tool_call_id`；
-- 执行成功/失败；
-- 是否取得可用数据；
-- 截断后的结果摘要；
-- 节点延迟和调用成本增量。
+- 参数的可序列化摘要；
+- 成功/失败；
+- 延迟；
+- observation 文件引用。
 
-Learned轨迹只把Tool调用数量和成本归入对应Scheduler step。两种记录都不把Tool变成Scheduler action，也不对工具调用Token计算策略Loss。第一版不保存完整原始参数或全量返回，避免不必要的数据体积和敏感内容扩散。
+Tool trace 不保存为 Scheduler action，也不对工具调用 Token 计算策略 Loss。
 
 ### 7.5 数据目录
 
 ```text
 data/scheduler/
 ├── tasks/
-│   ├── static_langgraph_pilot_v1.jsonl
-│   └── static_langgraph_pilot_v1.manifest.json
-├── static_langgraph_pilot_v1/
-│   ├── accepted.jsonl
-│   └── rejected.jsonl
+│   ├── train.jsonl
+│   ├── validation.jsonl
+│   └── test.jsonl
+├── teacher/
+│   ├── static_results.jsonl
+│   ├── route_candidates.jsonl
+│   ├── accepted_trajectories.jsonl
+│   └── rejected_trajectories.jsonl
 ├── sft/
-│   └── static_langgraph_pilot_v1.jsonl
-└── rollouts/
-    └── <policy_version>/*.jsonl
+│   └── scheduler_sft.jsonl
+├── rollouts/
+│   └── <policy_version>/*.jsonl
+└── observations/
+    └── <task_id>/*
 ```
 
-当前Pilot通过任务清单、信息截止日期、代码提交和provider配置记录来源。若后续A/B要求字节级相同的市场输入，再增加合法的数据快照层；第一版不宣称已经实现全量Tool response冻结。不同调度路径中的Agent report不跨上下文复用，因为其输入状态不同。
+Tool observation 可按 `(tool_name, normalized_args, data_snapshot_id)` 缓存，保证同一任务的 Static/Learned 轨迹读取相同数据。不同调度路径中的 Agent report 不跨上下文复用，因为其输入状态不同。
 
 ## 8. 数据生成与蒸馏流程
 
@@ -829,11 +810,7 @@ Reward 与过滤规则负责判断候选
 - Portfolio Manager 五级评级；
 - Agent/Tool 调用数；
 - Token 和延迟；
-- 代码提交、模型/provider和信息截止日期；
-- Agent、Tool、控制节点的真实LangGraph事件；
-- Tool执行状态、数据缺失和失败原因。
-
-实现不是在Learned Graph里放一个模仿固定顺序的策略，而是由`training/scheduler/static_trace.py`直接stream原`setup_static_graph()`编译结果。原Expert Prompt保持不变，采集器只记录`updates + values`事件。随后`training/scheduler/build_sft_dataset.py`从真实Static事件中抽取`state → valid actions → actual Agent action`。
+- 完整数据快照标识。
 
 Static Teacher 的作用：
 
@@ -1162,22 +1139,27 @@ Q_{PM}=1-\frac{|y_l-y_s|}{4}
 
 ### 9.3 Trader 质量分
 
-Trader 三分类为：
+Trader 三分类映射：
 
 ```text
-Buy / Hold / Sell
+Buy   2
+Hold  1
+Sell  0
 ```
 
-Learned与Static动作完全相同时`Q_Trader=1`，否则为0。无有效TraderProposal时同样为0。第一版采用精确一致性，避免把Buy与Hold之间的距离解释成未经验证的连续交易效用。
+\[
+Q_{Trader}=1-\frac{|a_l-a_s|}{2}
+\]
 
-### 9.4 格式与完成奖励
+无有效 TraderProposal 时，`Q_Trader=0`。
+
+### 9.4 完成奖励
 
 ```text
-Scheduler动作格式合法、唯一STOP且无错误： +0.10
-Plan、Trader动作和Portfolio评级均可解析： +0.20
-超过最大步数且未完成：                  -1.00
-动作 Token 无法解析：                   -1.00
-所有动作被 Mask：                       -1.00 并fallback
+有效 PortfolioDecision 且正常 STOP： +0.20
+超过最大步数且未完成：               -1.00
+动作 Token 无法解析：                -1.00
+所有动作被 Mask：                    -1.00 并 fallback
 ```
 
 ### 9.5 成本惩罚
@@ -1221,7 +1203,6 @@ P_repeat = 0.10
 R(\tau)=
 0.7Q_{PM}
 +0.3Q_{Trader}
-+R_{format}
 +R_{complete}
 -C
 -P_{repeat}
@@ -1241,7 +1222,6 @@ R(\tau)\in[-1.5, 1.2]
 ```text
 Learned PM rating 与 Static 完全一致：Q_PM=1.0
 Learned Trader action 与 Static 一致： Q_Trader=1.0
-格式合法且正常STOP：                  +0.10
 正常完成：                            +0.20
 Agent 调用 9 次：                     -0.18
 Tool 调用 6 次：                      -0.03
@@ -1252,12 +1232,10 @@ Tool 调用 6 次：                      -0.03
 则：
 
 \[
-R=0.7+0.3+0.1+0.2-0.18-0.03-0.09=1.00
+R=0.7+0.3+0.2-0.18-0.03-0.09=0.90
 \]
 
 若 Scheduler 为了省成本过早调用 Portfolio Manager，导致最终评级与 Static Teacher 相反，则质量分下降，无法仅靠减少调用获得高 Reward。
-
-若Learned Scheduler失败后回退到Static Graph，回退产生的最终答案不计入Learned质量分和完成奖励；该轨迹只保留回退与未完成惩罚，防止策略通过主动失败获得高分。
 
 ## 10. 粗粒度信用分配
 
@@ -1524,21 +1502,21 @@ Propagator.create_initial_state()
   ↓
 Learned Graph: START → Scheduler
   ↓
-SchedulerPolicy.select_action(SchedulerContext)
+SchedulerPolicy.select_action(state, valid_actions)
   ↓
-TrajectoryRecorder.record_decision()
+TrajectoryRecorder.start_transition()
   ↓
 LangGraph 路由到 Expert Agent
   ↓
 Expert Agent → 可选 ToolNode 循环 → report/state update
   ↓
-下一次record_decision()结算上一步成本与observation摘要
+TrajectoryRecorder.finish_transition(cost, observation_ref)
   ↓
 返回 Scheduler
   ↓
 Portfolio Manager → Scheduler → STOP
   ↓
-TrajectoryRecorder.finalize()；score_trajectory(trajectory, final_state, static_state)
+Reward.score(trajectory, static_teacher_result)
   ↓
 保存 trajectory；训练模式下进入 rollout batch
 ```
@@ -1549,122 +1527,98 @@ TrajectoryRecorder.finalize()；score_trajectory(trajectory, final_state, static
 
 ```text
 tradingagents/scheduler/
+├── __init__.py
 ├── actions.py
 ├── action_mask.py
-├── agent_registry.py
 ├── state_serializer.py
 ├── policy.py
 ├── scheduler_node.py
-├── recorder.py
 ├── trajectory.py
 ├── trajectory_store.py
-├── verifier.py
-├── teacher_context.py
-├── teacher_prompt.py
-├── teacher_gateway.py
-├── teacher_policy.py
-├── hf_policy.py
-└── cost_tracker.py
-
-training/scheduler/
-├── build_task_seeds.py
-├── scaled_task_seeds.py
-├── validate_task_manifest.py
-├── static_trace.py
-├── generate_data.py
-├── trajectory_audit.py
-├── build_sft_dataset.py
-├── prepare_sft_dataset.py
-├── dataset.py
-├── model.py
-├── collator.py
-├── train_sft.py
-├── environment.py
-├── rollout_runner.py
-├── collect_rollouts.py
 ├── reward.py
-├── advantage.py
-├── grpo_dataset.py
-├── grpo_loss.py
-├── train_grpo.py
-└── evaluate_policy.py
+├── static_teacher.py
+├── route_teacher.py
+├── candidate_filter.py
+├── dataset.py
+├── rollout.py
+├── sft.py
+├── grpo_trainer.py
+└── evaluate.py
 ```
 
 职责：
 
 | 模块 | 职责 |
 |---|---|
-| `actions.py` / `agent_registry.py` | Action Token、Agent node和能力注册表 |
+| `actions.py` | Action Token、Agent node 与稳定 action id 映射 |
 | `action_mask.py` | 根据 AgentState 计算最低数据依赖和合法动作 |
 | `state_serializer.py` | 将全局状态压缩为 Scheduler 输入文本 |
-| `policy.py` / `hf_policy.py` | Policy协议、测试策略和HuggingFace小模型推理 |
+| `policy.py` | Static/Learned policy 加载、采样和 logprob 提取 |
 | `scheduler_node.py` | LangGraph Scheduler node 与路由返回值 |
-| `recorder.py` / `trajectory.py` / `trajectory_store.py` | Learned决策轨迹的数据模型、记录和JSONL持久化 |
-| `teacher_*` | Strong Route Teacher上下文、Prompt、OpenRouter网关和Policy适配 |
-| `build_task_seeds.py` / `validate_task_manifest.py` | point-in-time任务分层选择和防泄漏校验 |
-| `static_trace.py` | 直接采集原Static LangGraph的Agent/Tool/状态事件 |
-| `generate_data.py` | 生成可续跑的Static/Teacher轨迹并记录生成manifest |
-| `trajectory_audit.py` / `prepare_sft_dataset.py` | 审核轨迹，按split生成action-only SFT数据、统计和checksum |
-| `train_sft.py` | Scheduler Action Token的LoRA冷启动训练 |
-| `collect_rollouts.py` / `rollout_runner.py` | 当前策略与冻结参考策略的同任务分组轨迹 |
-| `reward.py` / `advantage.py` | 终局质量、成本Reward和组相对优势 |
-| `grpo_dataset.py` / `grpo_loss.py` / `train_grpo.py` | Action Token掩码下的GRPO-style LoRA更新 |
-| `evaluate_policy.py` | Static/Learned A/B指标聚合 |
+| `trajectory.py` | Transition/Trajectory 数据模型 |
+| `trajectory_store.py` | JSONL/observation 引用的追加写入和回放 |
+| `reward.py` | 结构化质量、完成、成本、重复和非法动作评分 |
+| `static_teacher.py` | 运行 Static Graph 并生成结果参考 |
+| `route_teacher.py` | 构造强模型请求并解析候选 Agent actions |
+| `candidate_filter.py` | 执行结果合法性、完成度、质量、成本和去重过滤 |
+| `dataset.py` | task manifest、SFT 样本和 split 加载 |
+| `rollout.py` | 使用当前 policy 生成同任务多轨迹 |
+| `sft.py` | Scheduler Action Token 冷启动训练 |
+| `grpo_trainer.py` | Reward 归一化、组相对优势、Loss Mask、KL 和 LoRA 更新 |
+| `evaluate.py` | Static/Learned A/B 和指标聚合 |
 
 ### 14.2 Policy 接口
 
 ```python
 class SchedulerPolicy(Protocol):
-    policy_id: str
-
-    def select_action(self, context: SchedulerContext) -> PolicyDecision: ...
+    def select_action(
+        self,
+        scheduler_input: str,
+        valid_action_ids: list[int],
+        *,
+        sample: bool,
+    ) -> SchedulerDecision:
+        ...
 ```
 
 ```python
 @dataclass(frozen=True)
-class PolicyDecision:
-    action: SchedulerAction
-    reason_code: str = ""
-    reason: str = ""
-    logprob: float | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+class SchedulerDecision:
+    action: str
+    action_id: int
+    logprob: float
+    policy_version: str
 ```
 
 实现：
 
 - `StaticSchedulerPolicy`：仅用于验证 Learned Graph 的 Scheduler 循环能否复现原路径，不作为产品第三模式或生产 fallback；
-- `StrongTeacherPolicy`：把冻结Strong Teacher API适配为逐步next-Agent策略；
-- `LearnedSchedulerPolicy`：加载 Scheduler 基模与 LoRA checkpoint；
-- `ReferenceScoredPolicy`：给当前策略动作补充冻结参考策略logprob。
+- `LearnedSchedulerPolicy`：加载 Scheduler 基模与 LoRA checkpoint。
 
 ### 14.3 Reward 接口
 
 ```python
-def score_trajectory(
-    trajectory: SchedulerTrajectory,
-    final_state: dict[str, Any],
-    static_state: dict[str, Any],
-    *,
-    config: RewardConfig | None = None,
-) -> RewardBreakdown: ...
+class SchedulerReward:
+    def score(
+        self,
+        trajectory: SchedulerTrajectory,
+        teacher_result: StaticTeacherResult,
+    ) -> RewardBreakdown:
+        ...
 ```
 
 ```python
 @dataclass(frozen=True)
 class RewardBreakdown:
-    total: float
-    portfolio_quality: float
+    pm_quality: float
     trader_quality: float
-    format_compliance: float
-    completion: float
+    completion_bonus: float
     agent_cost: float
     tool_cost: float
     token_cost: float
-    latency_cost: float
-    no_progress: float
-    invalid: float
-    incomplete: float
-    fallback: float
+    repeat_penalty: float
+    invalid_penalty: float
+    total: float
 ```
 
 ## 15. 配置方案

@@ -34,25 +34,6 @@ class SFTTrainConfig:
         return cls(**json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-def _validation_loss(model, loader, accelerator) -> float:
-    import torch
-
-    model.eval()
-    loss_sum = torch.zeros((), device=accelerator.device)
-    example_count = torch.zeros((), device=accelerator.device)
-    with torch.no_grad():
-        for batch in loader:
-            batch_size = batch["input_ids"].shape[0]
-            loss_sum += model(**batch).loss.detach() * batch_size
-            example_count += batch_size
-    totals = accelerator.reduce(
-        torch.stack((loss_sum, example_count)),
-        reduction="sum",
-    )
-    model.train()
-    return float((totals[0] / totals[1].clamp_min(1)).item())
-
-
 def train(config: SFTTrainConfig) -> dict[str, float]:
     import torch
     from accelerate import Accelerator
@@ -78,27 +59,11 @@ def train(config: SFTTrainConfig) -> dict[str, float]:
         shuffle=True,
         collate_fn=collator,
     )
-    validation_loader = None
-    if config.validation_path:
-        validation_loader = DataLoader(
-            SchedulerSFTDataset(config.validation_path),
-            batch_size=config.batch_size,
-            shuffle=False,
-            collate_fn=collator,
-        )
     optimizer = torch.optim.AdamW(
         (parameter for parameter in model.parameters() if parameter.requires_grad),
         lr=config.learning_rate,
     )
-    if validation_loader is None:
-        model, optimizer, loader = accelerator.prepare(model, optimizer, loader)
-    else:
-        model, optimizer, loader, validation_loader = accelerator.prepare(
-            model,
-            optimizer,
-            loader,
-            validation_loader,
-        )
+    model, optimizer, loader = accelerator.prepare(model, optimizer, loader)
     model.train()
     total_loss = 0.0
     update_steps = 0
@@ -112,12 +77,6 @@ def train(config: SFTTrainConfig) -> dict[str, float]:
             total_loss += float(loss.detach())
             update_steps += 1
 
-    metrics = {"train_loss": total_loss / max(update_steps, 1)}
-    if validation_loader is not None:
-        metrics["validation_loss"] = _validation_loss(
-            model, validation_loader, accelerator
-        )
-
     accelerator.wait_for_everyone()
     output = Path(config.output_dir)
     if accelerator.is_main_process:
@@ -130,14 +89,9 @@ def train(config: SFTTrainConfig) -> dict[str, float]:
         )
         tokenizer.save_pretrained(output)
         (output / "training_manifest.json").write_text(
-            json.dumps(
-                {"config": asdict(config), "metrics": metrics},
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
+            json.dumps(asdict(config), indent=2, sort_keys=True), encoding="utf-8"
         )
-    return metrics
+    return {"train_loss": total_loss / max(update_steps, 1)}
 
 
 def main() -> None:

@@ -4,14 +4,12 @@
   "tokenizer_revision": "REPLACE_WITH_PINNED_REVISION",
   "active_adapter_path": "artifacts/scheduler/checkpoints/sft",
   "reference_adapter_path": "artifacts/scheduler/checkpoints/sft",
-  "tasks_path": "data/scheduler/tasks/static_langgraph_300_v1.jsonl",
+  "tasks_path": "data/scheduler/tasks/train.jsonl",
   "output_dir": "artifacts/scheduler/rollouts/iteration-001",
   "dtype": "bfloat16",
   "device": "cuda",
   "group_size": 4,
   "action_temperature": 1.0,
   "base_seed": 42,
-  "task_split": "train",
-  "tasks_per_family": null,
   "selected_analysts": ["market", "social", "news", "fundamentals"]
 }

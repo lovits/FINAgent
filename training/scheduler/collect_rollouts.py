@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from tradingagents.default_config import DEFAULT_CONFIG
@@ -14,8 +13,7 @@ from tradingagents.scheduler.policy import ReferenceScoredPolicy
 from tradingagents.scheduler.trajectory_store import TrajectoryStore
 
 from .environment import TradingAgentsRolloutEnvironment
-from .generate_data import load_tasks, select_generation_tasks
-from .reward import RewardConfig
+from .generate_data import load_tasks
 from .rollout_runner import GroupRolloutRunner, grpo_rows, write_grpo_jsonl
 
 
@@ -33,8 +31,6 @@ class RolloutConfig:
     group_size: int = 4
     action_temperature: float = 1.0
     base_seed: int = 42
-    task_split: str = "train"
-    tasks_per_family: int | None = None
     selected_analysts: tuple[str, ...] = ("market", "social", "news", "fundamentals")
 
     @classmethod
@@ -76,23 +72,11 @@ def collect(config: RolloutConfig) -> dict[str, int]:
     )
     runner = GroupRolloutRunner(environment, group_size=config.group_size)
     output = Path(config.output_dir)
-    for name in ("trajectories.jsonl", "grpo_rows.jsonl", "rollout_manifest.json"):
-        if (output / name).exists():
-            raise FileExistsError(
-                f"rollout output already exists: {output / name}; use a new iteration directory"
-            )
     trajectory_store = TrajectoryStore(output / "trajectories.jsonl")
     all_rows = []
-    reward_values = []
-    status_counts: Counter[str] = Counter()
     task_count = 0
     trajectory_count = 0
-    tasks = select_generation_tasks(
-        load_tasks(config.tasks_path),
-        dataset_split=config.task_split,
-        tasks_per_family=config.tasks_per_family,
-    )
-    for task_index, task in enumerate(tasks):
+    for task_index, task in enumerate(load_tasks(config.tasks_path)):
         scored = runner.run_task(
             task,
             policy,
@@ -102,35 +86,15 @@ def collect(config: RolloutConfig) -> dict[str, int]:
             trajectory = rollout.result.trajectory
             trajectory.reward = rollout.reward.to_dict()
             trajectory_store.append(trajectory)
-            reward_values.append(rollout.reward.total)
-            status_counts[trajectory.status] += 1
             trajectory_count += 1
         all_rows.extend(grpo_rows(scored))
         task_count += 1
     write_grpo_jsonl(all_rows, output / "grpo_rows.jsonl")
-    counts = {
+    return {
         "tasks": task_count,
         "trajectories": trajectory_count,
         "training_rows": len(all_rows),
     }
-    manifest = {
-        "config": asdict(config),
-        "counts": counts,
-        "trajectory_status_counts": dict(status_counts),
-        "reward_config": asdict(RewardConfig()),
-        "reward_summary": {
-            "minimum": min(reward_values),
-            "maximum": max(reward_values),
-            "mean": sum(reward_values) / len(reward_values),
-        },
-        "method": "group_relative_trajectory_reward",
-        "policy_loss_scope": "scheduler_action_tokens_only",
-    }
-    (output / "rollout_manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return counts
 
 
 def main() -> None:

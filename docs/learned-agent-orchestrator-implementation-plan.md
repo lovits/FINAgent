@@ -5,7 +5,6 @@
 > 状态：WP0–WP9 离线代码框架已实现；真实 Teacher 调用和基模训练未执行
 > 日期：2026-09-03
 > 关联设计：[Learned Agent Orchestrator Design](./learned-agent-orchestrator-design.md)
-> 当前轨迹、审核、SFT与GRPO可执行流程以[Scheduler轨迹数据流水线](./scheduler-trajectory-sft-grpo-pipeline.md)为准。
 
 ## 1. 这次改造到底要做什么
 

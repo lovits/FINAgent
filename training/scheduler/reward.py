@@ -6,27 +6,19 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from tradingagents.agents.utils.rating import RATINGS_5_TIER
-from tradingagents.scheduler.actions import SchedulerAction
+from tradingagents.agents.utils.rating import RATINGS_5_TIER, parse_rating
 from tradingagents.scheduler.trajectory import SchedulerTrajectory
 
 _TRADER_ACTION_RE = re.compile(
     r"FINAL\s+TRANSACTION\s+PROPOSAL\s*:\s*\*{0,2}(BUY|HOLD|SELL)",
     re.IGNORECASE,
 )
-_RATING_CHOICES = "|".join(re.escape(rating) for rating in RATINGS_5_TIER)
-_RATING_LABEL_RE = re.compile(
-    rf"rating.*?[:\-][\s*]*({_RATING_CHOICES})\b",
-    re.IGNORECASE,
-)
-_RATING_MENTION_RE = re.compile(rf"\b({_RATING_CHOICES})\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
 class RewardConfig:
     portfolio_quality_weight: float = 0.70
     trader_quality_weight: float = 0.30
-    format_compliance_weight: float = 0.10
     completion_bonus: float = 0.20
     agent_call_cost: float = 0.02
     tool_call_cost: float = 0.005
@@ -45,7 +37,6 @@ class RewardBreakdown:
     total: float
     portfolio_quality: float
     trader_quality: float
-    format_compliance: float
     completion: float
     agent_cost: float
     tool_cost: float
@@ -77,22 +68,9 @@ def parse_trader_action(value: Any) -> str | None:
     return None
 
 
-def parse_portfolio_rating(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    vocabulary = {rating.lower(): rating for rating in RATINGS_5_TIER}
-    labelled = _RATING_LABEL_RE.search(value)
-    if labelled:
-        return vocabulary[labelled.group(1).lower()]
-    first_mention = _RATING_MENTION_RE.search(value)
-    return vocabulary[first_mention.group(1).lower()] if first_mention else None
-
-
 def portfolio_similarity(candidate: str, reference: str) -> float:
-    candidate_rating = parse_portfolio_rating(candidate)
-    reference_rating = parse_portfolio_rating(reference)
-    if candidate_rating is None or reference_rating is None:
-        return 0.0
+    candidate_rating = parse_rating(candidate)
+    reference_rating = parse_rating(reference)
     candidate_index = RATINGS_5_TIER.index(candidate_rating)
     reference_index = RATINGS_5_TIER.index(reference_rating)
     return 1.0 - abs(candidate_index - reference_index) / (len(RATINGS_5_TIER) - 1)
@@ -108,27 +86,13 @@ def score_trajectory(
     """Score completion/quality first, then subtract measurable execution cost."""
 
     config = config or RewardConfig()
-    fallback_active = bool(trajectory.fallback_reason) or trajectory.status == "fallback"
-    candidate_pm = str(
-        trajectory.final_decision
-        if fallback_active
-        else final_state.get("final_trade_decision") or ""
-    )
+    candidate_pm = str(final_state.get("final_trade_decision") or "")
     reference_pm = str(static_state.get("final_trade_decision") or "")
-    candidate_trader = str(
-        trajectory.trader_result
-        if fallback_active
-        else final_state.get("trader_investment_plan") or ""
-    )
+    candidate_trader = str(final_state.get("trader_investment_plan") or "")
     reference_trader = str(static_state.get("trader_investment_plan") or "")
-    candidate_action = parse_trader_action(candidate_trader)
-    reference_action = parse_trader_action(reference_trader)
-    candidate_rating = parse_portfolio_rating(candidate_pm)
-    complete = (
-        not fallback_active
-        and _text(final_state.get("investment_plan"))
-        and candidate_action is not None
-        and candidate_rating is not None
+    complete = all(
+        _text(final_state.get(field))
+        for field in ("investment_plan", "trader_investment_plan", "final_trade_decision")
     )
 
     portfolio_quality = (
@@ -137,23 +101,13 @@ def score_trajectory(
         if complete and _text(reference_pm)
         else 0.0
     )
+    candidate_action = parse_trader_action(candidate_trader)
+    reference_action = parse_trader_action(reference_trader)
     trader_quality = (
         config.trader_quality_weight
         if complete and candidate_action is not None and candidate_action == reference_action
         else 0.0
     )
-    format_ok = (
-        bool(trajectory.steps)
-        and not fallback_active
-        and trajectory.steps[-1].selected_action == SchedulerAction.STOP.value
-        and sum(
-            step.selected_action == SchedulerAction.STOP.value
-            for step in trajectory.steps
-        )
-        == 1
-        and not any(step.error for step in trajectory.steps)
-    )
-    format_compliance = config.format_compliance_weight if format_ok else 0.0
     completion = config.completion_bonus if complete else 0.0
 
     agent_calls = sum(1 for step in trajectory.steps if step.agent_node)
@@ -167,12 +121,11 @@ def score_trajectory(
     no_progress = sum(step.no_progress for step in trajectory.steps) * config.no_progress_penalty
     invalid = config.invalid_penalty if any(step.error for step in trajectory.steps) else 0.0
     incomplete = 0.0 if complete else config.incomplete_penalty
-    fallback = config.fallback_penalty if fallback_active else 0.0
+    fallback = config.fallback_penalty if trajectory.fallback_reason else 0.0
 
     total = (
         portfolio_quality
         + trader_quality
-        + format_compliance
         + completion
         - agent_cost
         - tool_cost
@@ -188,7 +141,6 @@ def score_trajectory(
         total=total,
         portfolio_quality=portfolio_quality,
         trader_quality=trader_quality,
-        format_compliance=format_compliance,
         completion=completion,
         agent_cost=agent_cost,
         tool_cost=tool_cost,

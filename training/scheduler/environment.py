@@ -72,14 +72,6 @@ class TradingAgentsRolloutEnvironment:
         if recorder is None or recorder.current is None:
             raise RuntimeError("learned graph did not produce a scheduler trajectory")
         recorder.current.task_id = task_id
-        recorder.current.metadata.update(
-            {
-                "task_split": task.get("split"),
-                "seed_family": task.get("seed_family"),
-                "sector": task.get("sector"),
-                "information_cutoff": trade_date,
-            }
-        )
         return RolloutResult(
             trajectory=recorder.current,
             final_state=dict(final_state),

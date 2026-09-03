@@ -1,6 +1,6 @@
 from tradingagents.scheduler.actions import SchedulerAction
 from tradingagents.scheduler.trajectory import SchedulerTrajectory, TrajectoryStep
-from training.scheduler.reward import parse_portfolio_rating, score_trajectory
+from training.scheduler.reward import score_trajectory
 
 STATIC_STATE = {
     "investment_plan": "plan",
@@ -58,7 +58,6 @@ def test_reward_reduces_portfolio_quality_by_rating_distance():
     opposite = score_trajectory(trajectory, state, STATIC_STATE)
 
     assert matching.portfolio_quality == 0.7
-    assert matching.format_compliance == 0.1
     assert opposite.portfolio_quality == 0.0
     assert matching.total > opposite.total
 
@@ -72,36 +71,3 @@ def test_reward_penalizes_error_and_fallback():
 
     assert reward.invalid == 1.0
     assert reward.fallback == 0.25
-    assert reward.portfolio_quality == 0.0
-    assert reward.trader_quality == 0.0
-    assert reward.completion == 0.0
-
-
-def test_explicit_rating_wins_and_unparseable_output_is_incomplete():
-    assert parse_portfolio_rating("Buy case rejected. **Rating**: Sell") == "Sell"
-    trajectory, state = _trajectory(4)
-    state["final_trade_decision"] = "I cannot provide a rating."
-
-    reward = score_trajectory(trajectory, state, STATIC_STATE)
-
-    assert reward.portfolio_quality == 0.0
-    assert reward.completion == 0.0
-    assert reward.incomplete == 1.0
-
-
-def test_format_reward_requires_exactly_one_terminal_stop():
-    trajectory, state = _trajectory(2)
-    trajectory.steps.insert(
-        1,
-        TrajectoryStep(
-            step_id=1,
-            serialized_state="{}",
-            valid_actions=[SchedulerAction.STOP.value],
-            selected_action=SchedulerAction.STOP.value,
-            policy_id="policy",
-        ),
-    )
-
-    reward = score_trajectory(trajectory, state, STATIC_STATE)
-
-    assert reward.format_compliance == 0.0
