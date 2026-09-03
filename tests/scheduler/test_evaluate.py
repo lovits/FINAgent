@@ -140,3 +140,26 @@ def test_evaluation_rejects_different_expert_configuration() -> None:
 
     with pytest.raises(ValueError, match="provenance mismatch.*expert_config_hash"):
         evaluate_sets([static], grpo=[learned])
+
+
+def test_failed_empty_trajectory_is_not_counted_as_legal() -> None:
+    static = _trajectory(
+        "static",
+        "static",
+        [("<ACT_NEWS>", "News Analyst"), ("<ACT_STOP>", None)],
+    )
+    failed = _trajectory(
+        "failed",
+        "learned",
+        [("<ACT_NEWS>", "News Analyst"), ("<ACT_STOP>", None)],
+    )
+    failed.steps = []
+    failed.execution_status = "budget_exhausted"
+
+    metrics = evaluate_sets([static], grpo=[failed])["modes"]["grpo"]
+
+    assert metrics["completion_rate"] == 0
+    assert metrics["failure_rate"] == 1
+    assert metrics["legal_action_rate"] == 0
+    assert metrics["invalid_action_rate"] == 1
+    assert metrics["budget_exhausted_rate"] == 1

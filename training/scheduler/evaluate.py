@@ -37,11 +37,19 @@ def evaluate_trajectories(
     return {
         "trajectory_count": len(values),
         "completion_rate": mean(value["completed"] for value in task_metrics),
+        "failure_rate": mean(value["failed"] for value in task_metrics),
         "legal_action_rate": mean(value["legal"] for value in task_metrics),
+        "invalid_action_rate": mean(not value["legal"] for value in task_metrics),
         "stop_correct_rate": mean(value["stop_correct"] for value in task_metrics),
         "trader_parse_rate": mean(value["trader_parse"] for value in task_metrics),
         "portfolio_parse_rate": mean(value["portfolio_parse"] for value in task_metrics),
         "fallback_rate": mean(value["fallback"] for value in task_metrics),
+        "budget_exhausted_rate": mean(
+            value["budget_exhausted"] for value in task_metrics
+        ),
+        "context_overflow_rate": mean(
+            value["context_overflow"] for value in task_metrics
+        ),
         "trader_match_rate": mean(value["trader_match"] for value in task_metrics),
         "mean_portfolio_rating_distance": _mean_optional(
             value["portfolio_distance"] for value in task_metrics
@@ -136,9 +144,12 @@ def _trajectory_metrics(
         step.selected_action == SchedulerAction.STOP.value
         for step in trajectory.steps
     )
-    legal = all(step.selected_action in step.valid_actions for step in trajectory.steps)
+    legal = bool(trajectory.steps) and all(
+        step.selected_action in step.valid_actions for step in trajectory.steps
+    )
     metrics = {
         "completed": trajectory.execution_status == "completed",
+        "failed": trajectory.execution_status != "completed",
         "legal": legal,
         "stop_correct": stop_count == 1
         and bool(trajectory.steps)
@@ -146,6 +157,8 @@ def _trajectory_metrics(
         "trader_parse": trader is not None,
         "portfolio_parse": rating is not None,
         "fallback": trajectory.execution_status == "fallback",
+        "budget_exhausted": trajectory.execution_status == "budget_exhausted",
+        "context_overflow": trajectory.execution_status == "context_overflow",
         "trader_match": False,
         "portfolio_distance": None,
         "same_static_path": False,

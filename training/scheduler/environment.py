@@ -17,8 +17,10 @@ from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext, 
 from tradingagents.scheduler.cost_tracker import CostSnapshot, SchedulerCostCallback
 from tradingagents.scheduler.prompt import build_scheduler_input, business_state
 from tradingagents.scheduler.recorder import TrajectoryRecorder
+from tradingagents.scheduler.scheduler_node import SchedulerRuntimeError
 from tradingagents.scheduler.trajectory import (
     ExecutionCost,
+    ExecutionStatus,
     NodeExecution,
     SchedulerTrajectory,
 )
@@ -153,7 +155,7 @@ class TradingAgentsSchedulerEnvironment:
                     cost=ExecutionCost(agent_calls=1),
                     error=f"{type(exc).__name__}: {exc}",
                 )
-            status = "failed"
+            status = _execution_status(exc)
             failure = f"{type(exc).__name__}: {exc}"
         return EnvironmentRunResult(
             recorder.finalize(final_state, status=status, failure_reason=failure),
@@ -334,3 +336,12 @@ class TradingAgentsSchedulerEnvironment:
             context,
             PolicyDecision(SchedulerAction.STOP, policy_id=recorder.trajectory.policy_id),
         )
+
+
+def _execution_status(exc: Exception) -> ExecutionStatus:
+    if isinstance(exc, SchedulerRuntimeError):
+        if exc.reason == "scheduler_max_steps_exceeded":
+            return "budget_exhausted"
+        if "scheduler context has" in exc.reason and "maximum is" in exc.reason:
+            return "context_overflow"
+    return "failed"

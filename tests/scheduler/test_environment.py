@@ -3,7 +3,11 @@ from copy import deepcopy
 from tradingagents.scheduler.actions import SchedulerAction
 from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext
 from tradingagents.scheduler.policy import CallableSchedulerPolicy
-from training.scheduler.environment import TradingAgentsSchedulerEnvironment
+from tradingagents.scheduler.scheduler_node import SchedulerRuntimeError
+from training.scheduler.environment import (
+    TradingAgentsSchedulerEnvironment,
+    _execution_status,
+)
 
 
 def _initial_state() -> dict:
@@ -203,3 +207,15 @@ def test_dynamic_capture_queues_eager_next_decision_until_observation() -> None:
         "<ACT_NEWS>",
         "<ACT_STOP>",
     ]
+
+
+def test_scheduler_failures_map_to_explicit_terminal_statuses() -> None:
+    assert _execution_status(SchedulerRuntimeError("scheduler_max_steps_exceeded")) == (
+        "budget_exhausted"
+    )
+    assert _execution_status(
+        SchedulerRuntimeError(
+            "invalid_policy_decision:scheduler context has 40000 tokens; maximum is 32768"
+        )
+    ) == "context_overflow"
+    assert _execution_status(SchedulerRuntimeError("no_legal_scheduler_action")) == "failed"
