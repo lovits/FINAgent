@@ -104,6 +104,7 @@ class TradingAgentsSchedulerEnvironment:
         )
         recorder = TrajectoryRecorder(trajectory)
         cost_tracker = SchedulerCostCallback()
+        decision_queue: list[tuple[SchedulerContext, PolicyDecision]] = []
         runtime_config = {
             **self.config,
             "orchestration_mode": mode,
@@ -115,7 +116,9 @@ class TradingAgentsSchedulerEnvironment:
             config=runtime_config,
             callbacks=[cost_tracker],
             scheduler_policy=policy,
-            scheduler_on_decision=recorder.record_decision,
+            scheduler_on_decision=lambda context, decision: decision_queue.append(
+                (context, decision)
+            ),
         )
         initial_state = graph.create_initial_state(
             trajectory.ticker,
@@ -132,6 +135,7 @@ class TradingAgentsSchedulerEnvironment:
                 recorder,
                 mode,
                 cost_tracker,
+                decision_queue,
             )
             if mode == "static":
                 self._record_static_stop(final_state, recorder)
@@ -160,6 +164,7 @@ class TradingAgentsSchedulerEnvironment:
         recorder: TrajectoryRecorder,
         mode: str,
         cost_tracker: SchedulerCostCallback,
+        decision_queue: list[tuple[SchedulerContext, PolicyDecision]],
     ) -> dict[str, Any]:
         current_state = deepcopy(initial_state)
         pending_updates: list[tuple[str, object, dict[str, Any], float]] = []
@@ -201,6 +206,11 @@ class TradingAgentsSchedulerEnvironment:
                         cost=node_cost,
                     )
                 )
+                if node_name == "Scheduler" and mode != "static":
+                    if not decision_queue:
+                        raise ValueError("Scheduler node emitted no policy decision")
+                    context, decision = decision_queue.pop(0)
+                    recorder.record_decision(context, decision)
                 if recorder.has_pending_observation and decision_started is None:
                     decision_started = started_at
                 if node_kind == "tool" and recorder.has_pending_observation:
@@ -229,6 +239,8 @@ class TradingAgentsSchedulerEnvironment:
                     cost_baseline = cost_tracker.snapshot()
             pending_updates.clear()
             current_state = next_state
+        if decision_queue:
+            raise ValueError("unconsumed scheduler policy decisions remain after graph execution")
         return current_state
 
     @staticmethod

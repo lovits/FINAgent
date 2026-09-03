@@ -1,5 +1,8 @@
 from copy import deepcopy
 
+from tradingagents.scheduler.actions import SchedulerAction
+from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext
+from tradingagents.scheduler.policy import CallableSchedulerPolicy
 from training.scheduler.environment import TradingAgentsSchedulerEnvironment
 
 
@@ -112,3 +115,86 @@ def test_static_environment_projects_real_nodes_into_scheduler_steps() -> None:
     assert trajectory.steps[0].state_after["market_report"] == "market evidence"
     assert trajectory.final_outputs["final_trade_decision"] == "**Rating**: Hold"
     assert len(trajectory.node_executions) == 10
+
+
+class _QueuedDecisionGraph:
+    def __init__(self, on_decision):
+        self.on_decision = on_decision
+
+    def _queue(self, state, action, valid, step):
+        context = SchedulerContext(
+            "task-queued",
+            deepcopy(state),
+            f"prompt-{step}",
+            valid,
+            ("market", "news"),
+            step=step,
+        )
+        self.on_decision(
+            context,
+            PolicyDecision(action, policy_id="queued-policy"),
+        )
+
+    def stream(self, initial_state, **kwargs):
+        state = deepcopy(initial_state)
+        self._queue(state, SchedulerAction.MARKET, (SchedulerAction.MARKET,), 0)
+        yield "updates", {"Scheduler": {"scheduler_action": "<ACT_MARKET>"}}
+        yield "values", deepcopy(state)
+
+        state["market_report"] = "market"
+        yield "updates", {"Market Analyst": {"market_report": "market"}}
+        yield "values", deepcopy(state)
+        yield "updates", {"Msg Clear Market": {}}
+        self._queue(state, SchedulerAction.NEWS, (SchedulerAction.NEWS,), 1)
+        yield "values", deepcopy(state)
+
+        yield "updates", {"Scheduler": {"scheduler_action": "<ACT_NEWS>"}}
+        yield "values", deepcopy(state)
+        state["news_report"] = "news"
+        state["investment_plan"] = "Hold"
+        state["trader_investment_plan"] = "FINAL TRANSACTION PROPOSAL: HOLD"
+        state["final_trade_decision"] = "**Rating**: Hold"
+        yield "updates", {"News Analyst": {"news_report": "news"}}
+        yield "values", deepcopy(state)
+        yield "updates", {"Msg Clear News": {}}
+        self._queue(state, SchedulerAction.STOP, (SchedulerAction.STOP,), 2)
+        yield "values", deepcopy(state)
+
+        yield "updates", {"Scheduler": {"scheduler_action": "<ACT_STOP>"}}
+        yield "values", deepcopy(state)
+
+
+class _QueuedGraphFactory:
+    def __init__(self, *, scheduler_on_decision, **kwargs):
+        self.graph = _QueuedDecisionGraph(scheduler_on_decision)
+        self.propagator = _Propagator()
+
+    @staticmethod
+    def create_initial_state(*args, **kwargs):
+        return _initial_state()
+
+
+def test_dynamic_capture_queues_eager_next_decision_until_observation() -> None:
+    environment = TradingAgentsSchedulerEnvironment(
+        {},
+        selected_analysts=("market", "news"),
+        graph_factory=_QueuedGraphFactory,
+    )
+    result = environment.run(
+        {
+            "task_id": "task-queued",
+            "ticker": "AAPL",
+            "trade_date": "2026-01-05",
+            "data_snapshot_id": "snapshot-1",
+        },
+        mode="learned",
+        run_id="run-queued",
+        policy=CallableSchedulerPolicy(lambda _: SchedulerAction.MARKET),
+    )
+
+    assert result.trajectory.execution_status == "completed"
+    assert [step.selected_action for step in result.trajectory.steps] == [
+        "<ACT_MARKET>",
+        "<ACT_NEWS>",
+        "<ACT_STOP>",
+    ]
