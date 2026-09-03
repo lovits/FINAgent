@@ -25,6 +25,8 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_SCHEDULER_TRACE_ENABLED": "scheduler_trace_enabled",
     "TRADINGAGENTS_SCHEDULER_TRACE_DIR": "scheduler_trace_dir",
     "TRADINGAGENTS_SCHEDULER_ADAPTER_PATH": "scheduler_adapter_path",
+    "TRADINGAGENTS_SCHEDULER_BASE_MODEL": "scheduler_base_model",
+    "TRADINGAGENTS_SCHEDULER_BASE_REVISION": "scheduler_base_revision",
     "TRADINGAGENTS_TEACHER_MODEL": "teacher_model",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
