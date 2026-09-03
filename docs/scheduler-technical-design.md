@@ -813,6 +813,7 @@ training/scheduler/
 ├── train_sft.py
 ├── rollout.py
 ├── collect_rollouts.py
+├── collect_evaluation.py
 ├── reward.py
 ├── advantage.py
 ├── grpo_dataset.py
@@ -832,11 +833,8 @@ training/scheduler/
 ```yaml
 orchestration_mode: static
 scheduler_max_steps: 16
-scheduler_max_decision_attempts: 2
 scheduler_action_temperature: 0.0
 scheduler_fallback_enabled: true
-scheduler_trace_enabled: true
-scheduler_trace_dir: results/scheduler_traces
 scheduler_max_context_tokens: 32768
 
 teacher_provider: openrouter
@@ -857,9 +855,12 @@ scheduler_device: cuda
 SFT与GRPO参数分别放在：
 
 ```text
-configs/scheduler/sft-qwen3-1p7b.yaml
-configs/scheduler/grpo-qwen3-1p7b.yaml
-configs/scheduler/reward-v1.yaml
+configs/scheduler/sft-qwen3-1p7b.json
+configs/scheduler/rollout-qwen3-1p7b.json
+configs/scheduler/grpo-qwen3-1p7b.json
+configs/scheduler/reward-v1.json
+configs/scheduler/eval-sft-qwen3-1p7b.json
+configs/scheduler/eval-grpo-qwen3-1p7b.json
 ```
 
 ### 14.3 密钥
@@ -926,7 +927,6 @@ CLI / Rollout / Evaluation
 ```text
 data/scheduler/v1/                    任务、轨迹、审核、配对、SFT数据
 artifacts/scheduler/qwen3-1p7b/       模型、Smoke、SFT、Rollout、GRPO、评测
-results/scheduler_traces/              应用运行轨迹
 configs/scheduler/                     Agent Catalog、Prompt、训练与Reward配置
 ```
 

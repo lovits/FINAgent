@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from training.scheduler.provenance import (
     code_provenance,
+    expert_config_hash,
     generation_config_hash,
     trajectory_provenance,
 )
@@ -44,6 +45,24 @@ def test_generation_hash_is_stable_and_excludes_credentials() -> None:
     assert len(first) == 64
 
 
+def test_expert_hash_changes_only_with_execution_configuration() -> None:
+    first = expert_config_hash(
+        _config(OPENROUTER_API_KEY="secret-one"),
+        selected_analysts=("market", "news"),
+    )
+    same = expert_config_hash(
+        _config(OPENROUTER_API_KEY="secret-two", teacher_model="different-teacher"),
+        selected_analysts=("market", "news"),
+    )
+    different = expert_config_hash(
+        _config(quick_think_llm="different-expert"),
+        selected_analysts=("market", "news"),
+    )
+
+    assert first == same
+    assert first != different
+
+
 def test_trajectory_provenance_records_versions_without_secrets() -> None:
     provenance = trajectory_provenance(
         config=_config(OPENROUTER_API_KEY="must-not-leak"),
@@ -66,6 +85,7 @@ def test_trajectory_provenance_records_versions_without_secrets() -> None:
     assert provenance["task_dataset_version"] == "scheduler-tasks-v1"
     assert provenance["data_snapshot_id"] == "snapshot-1"
     assert provenance["action_schema_version"] == "scheduler-actions-v1"
+    assert len(provenance["expert_config_hash"]) == 64
     assert provenance["trajectory_schema_version"] == "scheduler-trajectory-v1"
     assert "must-not-leak" not in json.dumps(provenance)
 

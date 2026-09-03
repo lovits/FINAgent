@@ -326,7 +326,7 @@ training/scheduler/sft_dataset.py
 training/scheduler/sft_collator.py
 training/scheduler/train_sft.py
 training/scheduler/evaluate_sft.py
-configs/scheduler/sft-qwen3-1p7b.yaml
+configs/scheduler/sft-qwen3-1p7b.json
 ```
 
 ### 模型加载
@@ -387,8 +387,8 @@ training/scheduler/advantage.py
 training/scheduler/grpo_dataset.py
 training/scheduler/grpo_loss.py
 training/scheduler/train_grpo.py
-configs/scheduler/reward-v1.yaml
-configs/scheduler/grpo-qwen3-1p7b.yaml
+configs/scheduler/reward-v1.json
+configs/scheduler/grpo-qwen3-1p7b.json
 ```
 
 ### Rollout
@@ -449,11 +449,8 @@ tests/scheduler/test_grpo_smoke.py
 ```text
 orchestration_mode
 scheduler_max_steps
-scheduler_max_decision_attempts
 scheduler_action_temperature
 scheduler_fallback_enabled
-scheduler_trace_enabled
-scheduler_trace_dir
 scheduler_max_context_tokens
 teacher_provider
 teacher_model
@@ -472,13 +469,13 @@ scheduler_device
 ```text
 --orchestration-mode static|teacher|learned
 --scheduler-adapter-path PATH
---scheduler-trace-dir PATH
 ```
 
 ### 新增评测
 
 ```text
 training/scheduler/evaluate.py
+training/scheduler/collect_evaluation.py
 ```
 
 在相同任务和环境中比较：
@@ -498,6 +495,7 @@ GRPO Scheduler
 - 默认Static与原项目行为一致；
 - Learned加载失败可以回退Static；
 - A/B固定任务、数据、Expert配置和预算；
+- 每种模式每个Validation任务恰好一条轨迹，失败轨迹不得从评测分母剔除；
 - 结果文件包含完整配置和模型版本。
 
 ## 11. 提交顺序

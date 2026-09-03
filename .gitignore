@@ -224,7 +224,6 @@ reports/
 
 # Scheduler training artifacts (task definitions and config fixtures remain trackable)
 artifacts/scheduler/
-results/scheduler_traces/
 data/scheduler/v1/static/
 data/scheduler/v1/teacher/
 data/scheduler/v1/paired/

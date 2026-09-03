@@ -33,6 +33,7 @@ export TRADINGAGENTS_LLM_PROVIDER='openrouter'
 export TRADINGAGENTS_QUICK_THINK_LLM='google/gemini-3.8-flash'
 export TRADINGAGENTS_DEEP_THINK_LLM='google/gemini-3.8-flash'
 export TRADINGAGENTS_TEACHER_MODEL='google/gemini-3.8-flash'
+export TRADINGAGENTS_TEMPERATURE='0.0'
 ```
 
 Key不写入配置、Prompt、日志、轨迹或Git。
@@ -284,12 +285,24 @@ artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best
 
 ## 17. 生成A/B报告
 
+先分别用SFT和GRPO Adapter在同一组12条Validation任务上各生成一条确定性轨迹：
+
+```bash
+.venv/bin/python -m training.scheduler.collect_evaluation \
+  --config configs/scheduler/eval-sft-qwen3-1p7b.json
+
+.venv/bin/python -m training.scheduler.collect_evaluation \
+  --config configs/scheduler/eval-grpo-qwen3-1p7b.json
+```
+
+再比较四种模式。必须传入`raw.jsonl`，不能只使用accepted子集；这样失败任务也会进入完成率，评测器会强制四组`task_id + data_snapshot_id`完全一致。
+
 ```bash
 .venv/bin/python -m training.scheduler.evaluate \
-  --static data/scheduler/v1/static/validation/accepted.jsonl \
-  --teacher data/scheduler/v1/teacher/validation/accepted.jsonl \
-  --sft artifacts/scheduler/qwen3-1p7b/rollouts/sft-validation/trajectories.jsonl \
-  --grpo artifacts/scheduler/qwen3-1p7b/rollouts/grpo-validation/trajectories.jsonl \
+  --static data/scheduler/v1/static/validation/raw.jsonl \
+  --teacher data/scheduler/v1/teacher/validation/raw.jsonl \
+  --sft artifacts/scheduler/qwen3-1p7b/evaluation/sft-validation/raw.jsonl \
+  --grpo artifacts/scheduler/qwen3-1p7b/evaluation/grpo-validation/raw.jsonl \
   --output artifacts/scheduler/qwen3-1p7b/evaluation/ab_report.json
 ```
 

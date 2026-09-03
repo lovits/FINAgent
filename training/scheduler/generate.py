@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +12,6 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.scheduler.actions import ACTION_SCHEMA_VERSION
 from tradingagents.scheduler.prompt import (
     PROMPT_VERSION,
@@ -31,7 +29,8 @@ from tradingagents.scheduler.trajectory import TRAJECTORY_SCHEMA_VERSION
 from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
 from .memory_snapshot import build_memory_snapshot
-from .provenance import code_provenance, generation_config_hash
+from .provenance import code_provenance, expert_config_hash, generation_config_hash
+from .runtime_config import scheduler_runtime_config
 
 GENERATION_SCHEMA_VERSION = "scheduler-generation-v1"
 
@@ -140,6 +139,10 @@ def generate_trajectories(
                 "quick": config.get("quick_think_llm"),
                 "deep": config.get("deep_think_llm"),
             },
+            "expert_config_hash": expert_config_hash(
+                config,
+                selected_analysts=selected_analysts,
+            ),
             "schema_versions": {
                 "trajectory": TRAJECTORY_SCHEMA_VERSION,
                 "actions": ACTION_SCHEMA_VERSION,
@@ -189,19 +192,7 @@ def _trajectory_id(
 
 
 def _runtime_config() -> dict[str, Any]:
-    config = dict(DEFAULT_CONFIG)
-    overrides = {
-        "llm_provider": "TRADINGAGENTS_LLM_PROVIDER",
-        "quick_think_llm": "TRADINGAGENTS_QUICK_THINK_LLM",
-        "deep_think_llm": "TRADINGAGENTS_DEEP_THINK_LLM",
-        "backend_url": "TRADINGAGENTS_LLM_BACKEND_URL",
-        "teacher_model": "TRADINGAGENTS_TEACHER_MODEL",
-    }
-    for key, environment_name in overrides.items():
-        value = os.environ.get(environment_name)
-        if value:
-            config[key] = value
-    return config
+    return scheduler_runtime_config()
 
 
 def main() -> None:

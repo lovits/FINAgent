@@ -547,6 +547,8 @@ GRPO Scheduler
 
 Teacher结果作为数据来源质量参考单独报告，不和本地模型混成同一Checkpoint指标。
 
+SFT与GRPO Adapter分别以`temperature=0`在每个Validation任务上生成一条轨迹。A/B读取各模式的`raw.jsonl`并强制`task_id + data_snapshot_id`集合完全一致；失败轨迹保留在分母中，禁止只比较accepted子集。
+
 评测指标：
 
 | 维度 | 指标 |

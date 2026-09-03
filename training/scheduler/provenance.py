@@ -36,6 +36,19 @@ _CONFIG_FINGERPRINT_FIELDS = (
     "tool_vendors",
 )
 
+_EXPERT_CONFIG_FIELDS = (
+    "llm_provider",
+    "quick_think_llm",
+    "deep_think_llm",
+    "backend_url",
+    "output_language",
+    "temperature",
+    "max_debate_rounds",
+    "max_risk_discuss_rounds",
+    "data_vendors",
+    "tool_vendors",
+)
+
 
 def code_provenance(repo_root: str | Path | None = None) -> dict[str, Any]:
     root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[2]
@@ -60,6 +73,17 @@ def generation_config_hash(
             for key in _CONFIG_FINGERPRINT_FIELDS
             if key in config
         },
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode()).hexdigest()
+
+
+def expert_config_hash(
+    config: Mapping[str, Any], *, selected_analysts: Sequence[str]
+) -> str:
+    payload = {
+        "selected_analysts": list(selected_analysts),
+        "config": {key: config.get(key) for key in _EXPERT_CONFIG_FIELDS},
     }
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode()).hexdigest()
@@ -92,6 +116,11 @@ def trajectory_provenance(
         ),
         "policy_id": policy_id,
         "selected_analysts": list(selected_analysts),
+        "scheduler_max_steps": config.get("scheduler_max_steps"),
+        "expert_config_hash": expert_config_hash(
+            config,
+            selected_analysts=selected_analysts,
+        ),
         "agent_catalog_version": AGENT_CATALOG_VERSION,
         "action_schema_version": ACTION_SCHEMA_VERSION,
         "state_schema_version": STATE_SCHEMA_VERSION,

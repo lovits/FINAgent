@@ -1,0 +1,18 @@
+{
+  "tasks_path": "data/scheduler/v1/tasks/validation_12.jsonl",
+  "adapter_path": "artifacts/scheduler/qwen3-1p7b/grpo/iteration-001",
+  "output_dir": "artifacts/scheduler/qwen3-1p7b/evaluation/grpo-validation",
+  "run_id": "grpo-validation-v1",
+  "base_model": "Qwen/Qwen3-1.7B",
+  "base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "split": "validation",
+  "max_context_tokens": 32768,
+  "max_steps": 16,
+  "selected_analysts": [
+    "market",
+    "social",
+    "news",
+    "fundamentals"
+  ],
+  "resume": false
+}

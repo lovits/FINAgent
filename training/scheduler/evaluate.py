@@ -65,16 +65,64 @@ def evaluate_sets(
     **candidate_sets: Iterable[SchedulerTrajectory],
 ) -> dict[str, Any]:
     static_values = list(static)
-    static_map = {
-        (trajectory.task_id, trajectory.data_snapshot_id): trajectory
-        for trajectory in static_values
-    }
+    static_map = _index_by_task(static_values, name="static")
     results = {"static": evaluate_trajectories(static_values, static_map)}
     for name, trajectories in candidate_sets.items():
         values = list(trajectories)
-        if values:
-            results[name] = evaluate_trajectories(values, static_map)
-    return {"evaluation_schema_version": "scheduler-evaluation-v1", "modes": results}
+        candidate_map = _index_by_task(values, name=name)
+        missing = set(static_map) - set(candidate_map)
+        unexpected = set(candidate_map) - set(static_map)
+        if missing or unexpected:
+            raise ValueError(
+                f"{name} task set is not aligned with static: "
+                f"missing={len(missing)}, unexpected={len(unexpected)}"
+            )
+        for key, candidate in candidate_map.items():
+            _validate_comparable(static_map[key], candidate, name=name)
+        results[name] = evaluate_trajectories(values, static_map)
+    return {
+        "evaluation_schema_version": "scheduler-evaluation-v1",
+        "task_alignment": {
+            "key_fields": ["task_id", "data_snapshot_id"],
+            "task_count": len(static_map),
+            "strict": True,
+        },
+        "modes": results,
+    }
+
+
+def _index_by_task(
+    trajectories: Iterable[SchedulerTrajectory], *, name: str
+) -> dict[tuple[str, str | None], SchedulerTrajectory]:
+    indexed = {}
+    for trajectory in trajectories:
+        key = (trajectory.task_id, trajectory.data_snapshot_id)
+        if key in indexed:
+            raise ValueError(f"{name} contains duplicate trajectory for task {key}")
+        indexed[key] = trajectory
+    if not indexed:
+        raise ValueError(f"{name} evaluation set is empty")
+    return indexed
+
+
+def _validate_comparable(
+    static: SchedulerTrajectory,
+    candidate: SchedulerTrajectory,
+    *,
+    name: str,
+) -> None:
+    for field in (
+        "task_dataset_version",
+        "information_cutoff",
+        "expert_config_hash",
+        "scheduler_max_steps",
+    ):
+        static_value = static.provenance.get(field)
+        candidate_value = candidate.provenance.get(field)
+        if static_value is None or candidate_value is None:
+            raise ValueError(f"A/B provenance is missing {field} for {name}")
+        if candidate_value != static_value:
+            raise ValueError(f"A/B provenance mismatch for {name}: {field}")
 
 
 def _trajectory_metrics(

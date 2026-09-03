@@ -7,7 +7,8 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from tradingagents.default_config import DEFAULT_CONFIG
+from dotenv import load_dotenv
+
 from tradingagents.scheduler.hf_policy import load_shared_hf_scheduler_policies
 from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
 
@@ -15,6 +16,7 @@ from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
 from .reward import RewardConfig
 from .rollout import GroupRolloutRunner, grpo_rows, write_grpo_rows
+from .runtime_config import scheduler_runtime_config
 
 
 @dataclass(frozen=True)
@@ -58,15 +60,16 @@ def collect(config: RolloutConfig) -> dict[str, int]:
         (trajectory.task_id, trajectory.data_snapshot_id): trajectory
         for trajectory in static_values
     }
-    runtime_config = {
-        **DEFAULT_CONFIG,
-        "orchestration_mode": "learned",
-        "scheduler_base_model": config.base_model,
-        "scheduler_base_revision": config.base_revision,
-        "scheduler_max_context_tokens": config.max_context_tokens,
-        "scheduler_max_steps": config.max_steps,
-        "scheduler_action_temperature": config.action_temperature,
-    }
+    runtime_config = scheduler_runtime_config(
+        {
+            "orchestration_mode": "learned",
+            "scheduler_base_model": config.base_model,
+            "scheduler_base_revision": config.base_revision,
+            "scheduler_max_context_tokens": config.max_context_tokens,
+            "scheduler_max_steps": config.max_steps,
+            "scheduler_action_temperature": config.action_temperature,
+        }
+    )
     active, reference = load_shared_hf_scheduler_policies(
         runtime_config,
         active_adapter_path=config.active_adapter_path,
@@ -118,6 +121,7 @@ def collect(config: RolloutConfig) -> dict[str, int]:
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
