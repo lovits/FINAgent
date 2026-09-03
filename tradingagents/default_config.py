@@ -19,6 +19,12 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
+    "TRADINGAGENTS_ORCHESTRATION_MODE":   "orchestration_mode",
+    "TRADINGAGENTS_SCHEDULER_MAX_STEPS":  "scheduler_max_steps",
+    "TRADINGAGENTS_SCHEDULER_FALLBACK_ENABLED": "scheduler_fallback_enabled",
+    "TRADINGAGENTS_SCHEDULER_TRACE_ENABLED": "scheduler_trace_enabled",
+    "TRADINGAGENTS_SCHEDULER_TRACE_DIR": "scheduler_trace_dir",
+    "TRADINGAGENTS_SCHEDULER_ADAPTER_PATH": "scheduler_adapter_path",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
@@ -103,6 +109,24 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,
+    # Central Agent Scheduler. Static preserves the original graph; teacher and
+    # learned use the dynamic graph with an injected policy.
+    "orchestration_mode": "static",
+    "scheduler_max_steps": 16,
+    "scheduler_max_decision_attempts": 2,
+    "scheduler_action_temperature": 0.0,
+    "scheduler_fallback_enabled": True,
+    "scheduler_trace_enabled": True,
+    "scheduler_trace_dir": None,
+    "scheduler_max_context_tokens": 32768,
+    "teacher_provider": "openrouter",
+    "teacher_model": "google/gemini-3.8-flash",
+    "teacher_prompt_version": "teacher-scheduler-v1",
+    "scheduler_base_model": "Qwen/Qwen3-1.7B",
+    "scheduler_base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+    "scheduler_adapter_path": None,
+    "scheduler_dtype": "bfloat16",
+    "scheduler_device": None,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",

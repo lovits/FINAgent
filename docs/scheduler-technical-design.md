@@ -339,12 +339,20 @@ class SchedulerPolicy(Protocol):
 
     def select_action(self, context: SchedulerContext) -> PolicyDecision:
         ...
+```
 
-    def action_logprobs(self, context: SchedulerContext) -> Mapping[SchedulerAction, float]:
+Teacher和Learned都实现`SchedulerPolicy`。需要为GRPO提供概率的本地策略额外实现：
+
+```python
+class ActionLogprobPolicy(SchedulerPolicy, Protocol):
+    def action_logprobs(
+        self,
+        context: SchedulerContext,
+    ) -> Mapping[SchedulerAction, float]:
         ...
 ```
 
-Teacher和Learned实现同一个接口。Static运行原始图，不伪装成动态Policy。
+Static运行原始图，不伪装成动态Policy。
 
 ## 7. Action Mask机制
 

@@ -1,5 +1,6 @@
 # TradingAgents/graph/setup.py
 
+from collections.abc import Callable
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -21,6 +22,14 @@ from tradingagents.agents import (
     create_trader,
 )
 from tradingagents.agents.utils.agent_states import AgentState
+from tradingagents.scheduler.actions import SchedulerAction
+from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext, SchedulerPolicy
+from tradingagents.scheduler.registry import registry_for_analysts
+from tradingagents.scheduler.scheduler_node import (
+    SCHEDULER_NODE_NAME,
+    SchedulerNode,
+    route_scheduler_action,
+)
 
 from .analyst_execution import build_analyst_execution_plan
 from .conditional_logic import ConditionalLogic
@@ -58,6 +67,38 @@ class GraphSetup:
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
 
+    def _create_expert_workflow(self, selected_analysts):
+        plan = build_analyst_execution_plan(selected_analysts)
+        analyst_factories = {
+            "market": lambda: create_market_analyst(self.quick_thinking_llm),
+            "social": lambda: create_sentiment_analyst(self.quick_thinking_llm),
+            "news": lambda: create_news_analyst(self.quick_thinking_llm),
+            "fundamentals": lambda: create_fundamentals_analyst(self.quick_thinking_llm),
+        }
+        workflow = StateGraph(AgentState)
+        for spec in plan.specs:
+            workflow.add_node(spec.agent_node, analyst_factories[spec.key]())
+            workflow.add_node(spec.clear_node, create_msg_delete())
+            workflow.add_node(spec.tool_node, self.tool_nodes[spec.key])
+
+        workflow.add_node("Bull Researcher", create_bull_researcher(self.quick_thinking_llm))
+        workflow.add_node("Bear Researcher", create_bear_researcher(self.quick_thinking_llm))
+        workflow.add_node(
+            "Research Manager", create_research_manager(self.deep_thinking_llm)
+        )
+        workflow.add_node("Trader", create_trader(self.quick_thinking_llm))
+        workflow.add_node(
+            "Aggressive Analyst", create_aggressive_debator(self.quick_thinking_llm)
+        )
+        workflow.add_node("Neutral Analyst", create_neutral_debator(self.quick_thinking_llm))
+        workflow.add_node(
+            "Conservative Analyst", create_conservative_debator(self.quick_thinking_llm)
+        )
+        workflow.add_node(
+            "Portfolio Manager", create_portfolio_manager(self.deep_thinking_llm)
+        )
+        return workflow, plan
+
     def setup_graph(
         self, selected_analysts=("market", "social", "news", "fundamentals")
     ):
@@ -70,45 +111,7 @@ class GraphSetup:
                 - "news": News analyst
                 - "fundamentals": Fundamentals analyst
         """
-        plan = build_analyst_execution_plan(selected_analysts)
-
-        analyst_factories = {
-            "market": lambda: create_market_analyst(self.quick_thinking_llm),
-            "social": lambda: create_sentiment_analyst(self.quick_thinking_llm),
-            "news": lambda: create_news_analyst(self.quick_thinking_llm),
-            "fundamentals": lambda: create_fundamentals_analyst(self.quick_thinking_llm),
-        }
-
-        # Create researcher and manager nodes
-        bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
-        bear_researcher_node = create_bear_researcher(self.quick_thinking_llm)
-        research_manager_node = create_research_manager(self.deep_thinking_llm)
-        trader_node = create_trader(self.quick_thinking_llm)
-
-        # Create risk analysis nodes
-        aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
-        neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
-        conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
-        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
-
-        # Create workflow
-        workflow = StateGraph(AgentState)
-
-        # Add analyst nodes to the graph
-        for spec in plan.specs:
-            workflow.add_node(spec.agent_node, analyst_factories[spec.key]())
-            workflow.add_node(spec.clear_node, create_msg_delete())
-            workflow.add_node(spec.tool_node, self.tool_nodes[spec.key])
-
-        # Add other nodes
-        workflow.add_node("Bull Researcher", bull_researcher_node)
-        workflow.add_node("Bear Researcher", bear_researcher_node)
-        workflow.add_node("Research Manager", research_manager_node)
-        workflow.add_node("Trader", trader_node)
-        workflow.add_node("Aggressive Analyst", aggressive_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Conservative Analyst", conservative_analyst)
-        workflow.add_node("Portfolio Manager", portfolio_manager_node)
+        workflow, plan = self._create_expert_workflow(selected_analysts)
 
         # Define edges
         # Start with the first analyst
@@ -153,4 +156,61 @@ class GraphSetup:
 
         workflow.add_edge("Portfolio Manager", END)
 
+        return workflow
+
+    def setup_scheduler_graph(
+        self,
+        selected_analysts,
+        scheduler_policy: SchedulerPolicy,
+        *,
+        scheduler_max_steps: int = 16,
+        scheduler_on_decision: (
+            Callable[[SchedulerContext, PolicyDecision], None] | None
+        ) = None,
+    ):
+        """Build the dynamic graph while reusing every original Expert node."""
+
+        selected = tuple(selected_analysts)
+        workflow, plan = self._create_expert_workflow(selected)
+        scheduler_node = SchedulerNode(
+            scheduler_policy,
+            selected,
+            max_steps=scheduler_max_steps,
+            max_debate_rounds=self.conditional_logic.max_debate_rounds,
+            max_risk_rounds=self.conditional_logic.max_risk_discuss_rounds,
+            on_decision=scheduler_on_decision,
+        )
+        workflow.add_node(SCHEDULER_NODE_NAME, scheduler_node)
+        workflow.add_edge(START, SCHEDULER_NODE_NAME)
+
+        route_map = {
+            spec.action.value: spec.node_name for spec in registry_for_analysts(selected)
+        }
+        route_map[SchedulerAction.STOP.value] = END
+        workflow.add_conditional_edges(
+            SCHEDULER_NODE_NAME,
+            route_scheduler_action,
+            route_map,
+        )
+
+        for spec in plan.specs:
+            workflow.add_conditional_edges(
+                spec.agent_node,
+                getattr(self.conditional_logic, f"should_continue_{spec.key}"),
+                [spec.tool_node, spec.clear_node],
+            )
+            workflow.add_edge(spec.tool_node, spec.agent_node)
+            workflow.add_edge(spec.clear_node, SCHEDULER_NODE_NAME)
+
+        for node_name in (
+            "Bull Researcher",
+            "Bear Researcher",
+            "Research Manager",
+            "Trader",
+            "Aggressive Analyst",
+            "Conservative Analyst",
+            "Neutral Analyst",
+            "Portfolio Manager",
+        ):
+            workflow.add_edge(node_name, SCHEDULER_NODE_NAME)
         return workflow

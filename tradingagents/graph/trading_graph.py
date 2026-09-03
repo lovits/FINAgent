@@ -33,6 +33,7 @@ from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
+from tradingagents.scheduler.contracts import SchedulerPolicy
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
@@ -71,6 +72,7 @@ class TradingAgentsGraph:
         debug=False,
         config: dict[str, Any] = None,
         callbacks: list | None = None,
+        scheduler_policy: SchedulerPolicy | None = None,
     ):
         """Initialize the trading agents graph and components.
 
@@ -79,10 +81,22 @@ class TradingAgentsGraph:
             debug: Whether to run in debug mode
             config: Configuration dictionary. If None, uses default config
             callbacks: Optional list of callback handlers (e.g., for tracking LLM/tool stats)
+            scheduler_policy: Policy used by teacher or learned orchestration modes
         """
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
+        self.orchestration_mode = str(self.config.get("orchestration_mode", "static"))
+        if self.orchestration_mode not in {"static", "teacher", "learned"}:
+            raise ValueError(
+                "orchestration_mode must be 'static', 'teacher', or 'learned', "
+                f"got {self.orchestration_mode!r}"
+            )
+        if self.orchestration_mode != "static" and scheduler_policy is None:
+            raise ValueError(
+                f"{self.orchestration_mode} orchestration requires a scheduler_policy"
+            )
+        self.scheduler_policy = scheduler_policy
 
         # Update the interface's config
         set_config(self.config)
@@ -145,8 +159,16 @@ class TradingAgentsGraph:
         # Graph-shape-affecting run choices, kept for the checkpoint signature.
         self.selected_analysts = tuple(selected_analysts)
 
-        # Set up the graph: keep the workflow for recompilation with a checkpointer.
-        self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        # Keep the original graph untouched and build a separate dynamic graph
+        # only when an explicit scheduler mode is selected.
+        if self.orchestration_mode == "static":
+            self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        else:
+            self.workflow = self.graph_setup.setup_scheduler_graph(
+                selected_analysts,
+                self.scheduler_policy,
+                scheduler_max_steps=int(self.config.get("scheduler_max_steps", 16)),
+            )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
@@ -357,6 +379,14 @@ class TradingAgentsGraph:
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            "orchestration="
+            + str(
+                getattr(
+                    self,
+                    "orchestration_mode",
+                    self.config.get("orchestration_mode", "static"),
+                )
+            ),
         ])
 
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):
@@ -429,6 +459,20 @@ class TradingAgentsGraph:
             past_context=past_context,
             instrument_context=instrument_context,
         )
+        if self.orchestration_mode != "static":
+            init_agent_state.update(
+                {
+                    "scheduler_task_id": f"{company_name}:{trade_date}",
+                    "scheduler_action": "",
+                    "scheduler_step": 0,
+                    "scheduler_history": [],
+                    "scheduler_valid_actions": [],
+                    "scheduler_policy_id": self.scheduler_policy.policy_id,
+                    "scheduler_no_progress_count": 0,
+                    "scheduler_last_state_signature": "",
+                    "scheduler_agent_calls": 0,
+                }
+            )
         args = self.propagator.get_graph_args()
 
         # Inject thread_id so same ticker+date+graph-shape resumes; a different
