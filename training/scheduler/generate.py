@@ -28,6 +28,7 @@ from tradingagents.scheduler.trajectory import TRAJECTORY_SCHEMA_VERSION
 
 from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
+from .manifest import summarize_trajectories
 from .memory_snapshot import build_memory_snapshot
 from .provenance import code_provenance, expert_config_hash, generation_config_hash
 from .runtime_config import scheduler_runtime_config
@@ -170,6 +171,7 @@ def generate_trajectories(
             "started_at": started_at,
             "completed_at": datetime.now(UTC).isoformat(),
             "counts": counts,
+            "dataset_counts": summarize_trajectories(raw_store.load()),
         },
     )
     return counts

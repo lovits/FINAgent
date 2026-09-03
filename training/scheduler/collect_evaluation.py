@@ -17,6 +17,7 @@ from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
 from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
+from .manifest import summarize_trajectories
 from .provenance import code_provenance, expert_config_hash, generation_config_hash
 from .runtime_config import scheduler_runtime_config
 
@@ -139,6 +140,7 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
             "started_at": started_at,
             "completed_at": datetime.now(UTC).isoformat(),
             "counts": counts,
+            "dataset_counts": summarize_trajectories(raw_store.load()),
         },
     )
     return counts

@@ -130,5 +130,7 @@ def test_collect_evaluation_writes_one_deterministic_trajectory_per_task(
     assert manifest["policy_id"] == "sft"
     assert manifest["scheduler_temperature"] == 0.0
     assert manifest["expert_temperature"] == 0.0
+    assert manifest["dataset_counts"]["total"] == 2
+    assert manifest["dataset_counts"]["completed"] == 2
     assert loaded_configs[0]["scheduler_adapter_path"] == "adapter/sft"
     assert _Environment.runtime_config["orchestration_mode"] == "learned"

@@ -107,6 +107,8 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
     assert manifest["schema_versions"]["actions"] == "scheduler-actions-v1"
     assert len(manifest["generation_config_hash"]) == 64
     assert "git_commit" in manifest
+    assert manifest["dataset_counts"]["total"] == 1
+    assert manifest["dataset_counts"]["completed"] == 1
 
     resumed = generate_trajectories(
         [_task()],
@@ -118,6 +120,11 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
         resume=True,
     )
     assert resumed["skipped"] == 1
+    resumed_manifest = json.loads(
+        (tmp_path / "generation_manifest.json").read_text()
+    )
+    assert resumed_manifest["counts"]["skipped"] == 1
+    assert resumed_manifest["dataset_counts"]["completed"] == 1
 
 
 def test_generation_requires_resume_for_existing_record(monkeypatch, tmp_path) -> None:

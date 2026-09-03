@@ -465,9 +465,19 @@ API Key不属于`provenance`。
     "accepted": 0,
     "rejected": 0,
     "skipped": 0
+  },
+  "dataset_counts": {
+    "total": 60,
+    "completed": 0,
+    "failed": 0,
+    "accepted": 0,
+    "warning": 0,
+    "rejected": 0
   }
 }
 ```
+
+`counts`表示本次命令的处理结果；`dataset_counts`重新扫描当前`raw.jsonl`得到累计结果，因此`--resume`不会把已完成轨迹误报为0。
 
 ## 11. 轨迹审核
 
