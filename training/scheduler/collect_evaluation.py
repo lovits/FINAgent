@@ -77,7 +77,16 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
     raw_store = TrajectoryStore(output / "raw.jsonl")
     accepted_store = TrajectoryStore(output / "accepted.jsonl")
     rejected_store = TrajectoryStore(output / "rejected.jsonl")
-    counts = {"accepted": 0, "rejected": 0, "skipped": 0}
+    counts = {
+        "accepted": 0,
+        "rejected": 0,
+        "skipped": 0,
+        "completed": 0,
+        "failed": 0,
+        "fallback": 0,
+        "budget_exhausted": 0,
+        "context_overflow": 0,
+    }
 
     for task in tasks:
         trajectory_id = _trajectory_id(task, config.run_id, policy.policy_id)
@@ -95,6 +104,7 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
             policy=policy,
             trajectory_id=trajectory_id,
         )
+        counts[result.trajectory.execution_status] += 1
         audit = audit_trajectory(result.trajectory)
         raw_store.append(result.trajectory)
         if audit.audit_status in {"accepted", "warning"}:

@@ -77,7 +77,16 @@ def generate_trajectories(
         config,
         selected_analysts=selected_analysts,
     )
-    counts = {"accepted": 0, "rejected": 0, "skipped": 0}
+    counts = {
+        "accepted": 0,
+        "rejected": 0,
+        "skipped": 0,
+        "completed": 0,
+        "failed": 0,
+        "fallback": 0,
+        "budget_exhausted": 0,
+        "context_overflow": 0,
+    }
     task_count = 0
     task_dataset_versions = set()
     for source_task in tasks:
@@ -109,6 +118,7 @@ def generate_trajectories(
             past_context=str(task.get("past_context") or ""),
             trajectory_id=identifier,
         )
+        counts[result.trajectory.execution_status] += 1
         audit = audit_trajectory(result.trajectory)
         raw_store.append(result.trajectory)
         if audit.audit_status in {"accepted", "warning"}:

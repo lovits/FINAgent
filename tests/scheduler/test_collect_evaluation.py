@@ -111,7 +111,16 @@ def test_collect_evaluation_writes_one_deterministic_trajectory_per_task(
         )
     )
 
-    assert counts == {"accepted": 2, "rejected": 0, "skipped": 0}
+    assert counts == {
+        "accepted": 2,
+        "rejected": 0,
+        "skipped": 0,
+        "completed": 2,
+        "failed": 0,
+        "fallback": 0,
+        "budget_exhausted": 0,
+        "context_overflow": 0,
+    }
     raw_rows = (tmp_path / "evaluation" / "raw.jsonl").read_text().splitlines()
     assert len(raw_rows) == 2
     manifest = json.loads(

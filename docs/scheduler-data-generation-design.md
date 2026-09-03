@@ -459,8 +459,12 @@ API Key不属于`provenance`。
   "counts": {
     "completed": 0,
     "failed": 0,
+    "fallback": 0,
+    "budget_exhausted": 0,
+    "context_overflow": 0,
     "accepted": 0,
-    "rejected": 0
+    "rejected": 0,
+    "skipped": 0
   }
 }
 ```

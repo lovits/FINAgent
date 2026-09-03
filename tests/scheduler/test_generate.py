@@ -89,7 +89,16 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
         selected_analysts=("market", "social", "news", "fundamentals"),
     )
 
-    assert counts == {"accepted": 1, "rejected": 0, "skipped": 0}
+    assert counts == {
+        "accepted": 1,
+        "rejected": 0,
+        "skipped": 0,
+        "completed": 1,
+        "failed": 0,
+        "fallback": 0,
+        "budget_exhausted": 0,
+        "context_overflow": 0,
+    }
     assert len((tmp_path / "raw.jsonl").read_text().splitlines()) == 1
     assert len((tmp_path / "accepted.jsonl").read_text().splitlines()) == 1
     manifest = json.loads((tmp_path / "generation_manifest.json").read_text())
