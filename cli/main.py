@@ -971,11 +971,7 @@ def format_tool_args(args, max_length=80) -> str:
         return result[:max_length - 3] + "..."
     return result
 
-def _build_run_config(
-    selections: dict,
-    checkpoint: bool | None,
-    scheduler_mode: str | None = None,
-) -> dict:
+def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     """Assemble the run config from interactive selections, honoring env precedence.
 
     Round counts and checkpoint follow "explicit env/flag wins": an env-applied
@@ -1002,21 +998,14 @@ def _build_run_config(
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
     if checkpoint is not None:
         config["checkpoint_enabled"] = checkpoint
-    if scheduler_mode is not None:
-        if scheduler_mode not in {"static", "learned"}:
-            raise ValueError("scheduler_mode must be 'static' or 'learned'")
-        config["scheduler_mode"] = scheduler_mode
     return config
 
 
-def run_analysis(
-    checkpoint: bool | None = None,
-    scheduler_mode: str | None = None,
-):
+def run_analysis(checkpoint: bool | None = None):
     # First get all user selections
     selections = get_user_selections()
 
-    config = _build_run_config(selections, checkpoint, scheduler_mode)
+    config = _build_run_config(selections, checkpoint)
 
     # Create stats callback handler for tracking LLM/tool calls
     stats_handler = StatsCallbackHandler()
@@ -1136,13 +1125,11 @@ def run_analysis(
         )
         # Pass callbacks to graph config for tool execution tracking
         # (LLM tracking is handled separately via LLM constructor)
-        args = graph.propagator.get_graph_args(
-            callbacks=[stats_handler, *graph.runtime_callbacks]
-        )
+        args = graph.propagator.get_graph_args(callbacks=[stats_handler])
 
         # Stream the analysis
         trace = []
-        for chunk in graph.stream_graph(init_agent_state, **args):
+        for chunk in graph.graph.stream(init_agent_state, **args):
             # Process all messages in chunk, deduplicating by message ID
             for message in chunk.get("messages", []):
                 msg_id = getattr(message, "id", None)
@@ -1306,19 +1293,13 @@ def analyze(
         "--clear-checkpoints",
         help="Delete all saved checkpoints before running (force fresh start).",
     ),
-    scheduler_mode: str | None = typer.Option(
-        None,
-        "--scheduler-mode",
-        help="Agent orchestration mode: static or learned. Omit to honor "
-        "TRADINGAGENTS_SCHEDULER_MODE.",
-    ),
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
     try:
-        run_analysis(checkpoint=checkpoint, scheduler_mode=scheduler_mode)
+        run_analysis(checkpoint=checkpoint)
     except _NO_CONSOLE_ERRORS:
         # A terminal with no console buffer cannot host the interactive prompts.
         # Emit one actionable line on stderr instead of a prompt_toolkit

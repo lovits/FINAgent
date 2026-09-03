@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from langgraph.graph import MessagesState
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 
 # Researcher team state
@@ -74,23 +74,3 @@ class AgentState(MessagesState):
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
-
-    # Optional learned-scheduler control state. Static graphs never need to set
-    # these fields, preserving the original state contract for existing callers.
-    scheduler_mode: NotRequired[str]
-    scheduler_requested_mode: NotRequired[str]
-    scheduler_action: NotRequired[str]
-    scheduler_step: NotRequired[int]
-    scheduler_history: NotRequired[list[str]]
-    scheduler_valid_actions: NotRequired[list[str]]
-    scheduler_policy_id: NotRequired[str]
-    scheduler_reason_code: NotRequired[str]
-    scheduler_reason: NotRequired[str]
-    scheduler_action_logprob: NotRequired[float | None]
-    scheduler_last_state_signature: NotRequired[str]
-    scheduler_no_progress_count: NotRequired[int]
-    scheduler_agent_calls: NotRequired[int]
-    scheduler_tool_calls: NotRequired[int]
-    scheduler_estimated_tokens: NotRequired[int]
-    scheduler_fallback_reason: NotRequired[str]
-    scheduler_trace_id: NotRequired[str]

@@ -44,19 +44,12 @@ dev = [
 bedrock = [
     "langchain-aws>=1.5.0",
 ]
-scheduler-train = [
-    "torch>=2.5",
-    "transformers>=5.0",
-    "peft>=0.14",
-    "accelerate>=1.2",
-    "datasets>=3.2",
-]
 
 [project.scripts]
 tradingagents = "cli.main:app"
 
 [tool.setuptools.packages.find]
-include = ["tradingagents*", "cli*", "training*"]
+include = ["tradingagents*", "cli*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]

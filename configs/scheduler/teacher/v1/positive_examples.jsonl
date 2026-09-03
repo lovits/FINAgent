@@ -1,3 +1,0 @@
-{"case":"initial_evidence","state":"all reports empty","valid_actions":["<ACT_MARKET>","<ACT_NEWS>"],"next_agent":"<ACT_MARKET>","reason_code":"MISSING_MARKET_EVIDENCE"}
-{"case":"research_ready","state":"market and news reports exist; bull and bear history exists; investment plan empty","valid_actions":["<ACT_RESEARCH_MANAGER>","<ACT_FUNDAMENTALS>"],"next_agent":"<ACT_RESEARCH_MANAGER>","reason_code":"RESEARCH_DEBATE_READY"}
-{"case":"legal_stop","state":"final_trade_decision exists","valid_actions":["<ACT_STOP>"],"next_agent":"<ACT_STOP>","reason_code":"TASK_COMPLETE"}

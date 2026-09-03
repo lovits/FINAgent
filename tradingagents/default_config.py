@@ -19,14 +19,6 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
-    "TRADINGAGENTS_SCHEDULER_MODE":        "scheduler_mode",
-    "TRADINGAGENTS_SCHEDULER_BASE_MODEL":  "scheduler_base_model",
-    "TRADINGAGENTS_SCHEDULER_ADAPTER_PATH": "scheduler_adapter_path",
-    "TRADINGAGENTS_SCHEDULER_MAX_STEPS":   "scheduler_max_steps",
-    "TRADINGAGENTS_SCHEDULER_FALLBACK_ENABLED": "scheduler_fallback_enabled",
-    "TRADINGAGENTS_SCHEDULER_TRACE_ENABLED": "scheduler_trace_enabled",
-    "TRADINGAGENTS_SCHEDULER_TRACE_DIR":   "scheduler_trace_dir",
-    "TRADINGAGENTS_TEACHER_MODEL":         "teacher_model",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
@@ -118,28 +110,6 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
-    # Agent orchestration. Static remains the default and preserves the
-    # original LangGraph. Learned mode requires an injected/loaded policy.
-    "scheduler_mode": "static",
-    "scheduler_base_model": None,
-    "scheduler_base_model_revision": None,
-    "scheduler_tokenizer_revision": None,
-    "scheduler_adapter_path": None,
-    "scheduler_dtype": "bfloat16",
-    "scheduler_device": None,
-    "scheduler_max_context_tokens": 4096,
-    "scheduler_max_steps": 16,
-    "scheduler_action_temperature": 0.0,
-    "scheduler_invalid_action_policy": "fallback_static",
-    "scheduler_fallback_enabled": True,
-    "scheduler_trace_enabled": True,
-    "scheduler_trace_dir": None,
-    # Strong Route Teacher. Authentication is read only from
-    # OPENROUTER_API_KEY by the scheduler gateway, never from this config.
-    "teacher_provider": "openrouter",
-    "teacher_model": "google/gemini-3.8-flash",
-    "teacher_prompt_version": "v1",
-    "teacher_trajectories_per_task": 2,
     # News / data fetching parameters
     # Increase for longer lookback strategies or to broaden macro coverage;
     # decrease to reduce token usage in agent prompts.

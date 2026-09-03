@@ -1,6 +1,0 @@
-{"task_id":"AAPL_2025-01-15_technical","ticker":"AAPL","trade_date":"2025-01-15","asset_type":"stock","task_category":"technical"}
-{"task_id":"NVDA_2025-01-27_news","ticker":"NVDA","trade_date":"2025-01-27","asset_type":"stock","task_category":"news_event"}
-{"task_id":"MSFT_2025-02-03_fundamental","ticker":"MSFT","trade_date":"2025-02-03","asset_type":"stock","task_category":"fundamental"}
-{"task_id":"TSLA_2025-02-10_conflict","ticker":"TSLA","trade_date":"2025-02-10","asset_type":"stock","task_category":"conflict"}
-{"task_id":"AMD_2025-02-18_sparse","ticker":"AMD","trade_date":"2025-02-18","asset_type":"stock","task_category":"sparse_data"}
-{"task_id":"META_2025-02-24_risk","ticker":"META","trade_date":"2025-02-24","asset_type":"stock","task_category":"risk_sensitive"}

@@ -1,9 +1,0 @@
-{
-  "version": "v1",
-  "task_fields": ["company_of_interest", "trade_date", "asset_type", "instrument_context"],
-  "report_fields": ["market_report", "sentiment_report", "news_report", "fundamentals_report"],
-  "research_fields": ["investment_debate_state", "investment_plan"],
-  "trade_fields": ["trader_investment_plan"],
-  "risk_fields": ["risk_debate_state", "final_trade_decision"],
-  "excluded_from_teacher": ["messages", "raw_tool_observations", "credentials"]
-}
