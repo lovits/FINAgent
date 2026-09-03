@@ -61,9 +61,22 @@ def test_dynamic_modes_build_scheduler_graph(monkeypatch, tmp_path, mode: str) -
     assert "Scheduler" in graph.graph.get_graph().nodes
 
 
-def test_dynamic_mode_requires_policy(tmp_path) -> None:
-    with pytest.raises(ValueError, match="requires a scheduler_policy"):
-        TradingAgentsGraph(config=_config(tmp_path, "teacher"))
+def test_teacher_mode_builds_default_openrouter_policy(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "tradingagents.graph.trading_graph.create_llm_client", lambda **_: _DummyClient()
+    )
+    graph = TradingAgentsGraph(
+        selected_analysts=("market",),
+        config=_config(tmp_path, "teacher"),
+    )
+    assert graph.scheduler_policy.policy_id.startswith(
+        "teacher:google/gemini-3.8-flash:"
+    )
+
+
+def test_learned_mode_requires_policy_until_adapter_loader_is_configured(tmp_path) -> None:
+    with pytest.raises(ValueError, match="learned orchestration"):
+        TradingAgentsGraph(config=_config(tmp_path, "learned"))
 
 
 def test_unknown_mode_is_rejected(tmp_path) -> None:

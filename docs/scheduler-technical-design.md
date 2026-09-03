@@ -650,7 +650,7 @@ SchedulerContext
 | `task_id` | string | 任务ID |
 | `mode` | enum | static/teacher/learned |
 | `policy_id` | string | Policy版本 |
-| `execution_status` | enum | completed/failed/fallback/budget_exhausted/context_overflow |
+| `execution_status` | enum | running/completed/failed/fallback/budget_exhausted/context_overflow |
 | `audit_status` | enum | pending/accepted/rejected/warning |
 | `steps` | SchedulerStep[] | 中央编排轨迹 |
 | `node_executions` | NodeExecution[] | 原始节点证据 |

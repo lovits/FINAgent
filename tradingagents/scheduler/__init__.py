@@ -8,8 +8,16 @@ from .contracts import (
     SchedulerContext,
     SchedulerPolicy,
 )
+from .recorder import TrajectoryRecorder
 from .registry import AgentSpec, registry_for_analysts
 from .scheduler_node import SchedulerNode, SchedulerRuntimeError
+from .store import TrajectoryStore
+from .teacher_policy import (
+    OpenRouterTeacherGateway,
+    TeacherGatewayError,
+    TeacherSchedulerPolicy,
+)
+from .trajectory import ExecutionCost, NodeExecution, SchedulerStep, SchedulerTrajectory
 
 __all__ = [
     "ActionLogprobPolicy",
@@ -21,6 +29,15 @@ __all__ = [
     "SchedulerPolicy",
     "SchedulerNode",
     "SchedulerRuntimeError",
+    "SchedulerStep",
+    "SchedulerTrajectory",
+    "OpenRouterTeacherGateway",
+    "TeacherGatewayError",
+    "TeacherSchedulerPolicy",
+    "TrajectoryRecorder",
+    "TrajectoryStore",
+    "ExecutionCost",
+    "NodeExecution",
     "compute_action_mask",
     "node_for_action",
     "parse_action",

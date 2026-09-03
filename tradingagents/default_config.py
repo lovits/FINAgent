@@ -25,6 +25,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_SCHEDULER_TRACE_ENABLED": "scheduler_trace_enabled",
     "TRADINGAGENTS_SCHEDULER_TRACE_DIR": "scheduler_trace_dir",
     "TRADINGAGENTS_SCHEDULER_ADAPTER_PATH": "scheduler_adapter_path",
+    "TRADINGAGENTS_TEACHER_MODEL": "teacher_model",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
@@ -122,6 +123,10 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "teacher_provider": "openrouter",
     "teacher_model": "google/gemini-3.8-flash",
     "teacher_prompt_version": "teacher-scheduler-v1",
+    "teacher_base_url": "https://openrouter.ai/api/v1",
+    "teacher_timeout_seconds": 90.0,
+    "teacher_temperature": 0.2,
+    "teacher_seed": None,
     "scheduler_base_model": "Qwen/Qwen3-1.7B",
     "scheduler_base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
     "scheduler_adapter_path": None,

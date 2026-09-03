@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,11 @@ from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
-from tradingagents.scheduler.contracts import SchedulerPolicy
+from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext, SchedulerPolicy
+from tradingagents.scheduler.teacher_policy import (
+    OpenRouterTeacherGateway,
+    TeacherSchedulerPolicy,
+)
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
@@ -73,6 +78,9 @@ class TradingAgentsGraph:
         config: dict[str, Any] = None,
         callbacks: list | None = None,
         scheduler_policy: SchedulerPolicy | None = None,
+        scheduler_on_decision: (
+            Callable[[SchedulerContext, PolicyDecision], None] | None
+        ) = None,
     ):
         """Initialize the trading agents graph and components.
 
@@ -82,6 +90,7 @@ class TradingAgentsGraph:
             config: Configuration dictionary. If None, uses default config
             callbacks: Optional list of callback handlers (e.g., for tracking LLM/tool stats)
             scheduler_policy: Policy used by teacher or learned orchestration modes
+            scheduler_on_decision: Optional callback for trajectory recording
         """
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
@@ -92,11 +101,7 @@ class TradingAgentsGraph:
                 "orchestration_mode must be 'static', 'teacher', or 'learned', "
                 f"got {self.orchestration_mode!r}"
             )
-        if self.orchestration_mode != "static" and scheduler_policy is None:
-            raise ValueError(
-                f"{self.orchestration_mode} orchestration requires a scheduler_policy"
-            )
-        self.scheduler_policy = scheduler_policy
+        self.scheduler_policy = self._resolve_scheduler_policy(scheduler_policy)
 
         # Update the interface's config
         set_config(self.config)
@@ -168,9 +173,33 @@ class TradingAgentsGraph:
                 selected_analysts,
                 self.scheduler_policy,
                 scheduler_max_steps=int(self.config.get("scheduler_max_steps", 16)),
+                scheduler_on_decision=scheduler_on_decision,
             )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
+
+    def _resolve_scheduler_policy(
+        self, supplied: SchedulerPolicy | None
+    ) -> SchedulerPolicy | None:
+        if self.orchestration_mode == "static":
+            return None
+        if supplied is not None:
+            return supplied
+        if self.orchestration_mode == "teacher":
+            provider = str(self.config.get("teacher_provider", "openrouter"))
+            if provider != "openrouter":
+                raise ValueError(f"unsupported teacher_provider: {provider!r}")
+            gateway = OpenRouterTeacherGateway(
+                model=str(self.config.get("teacher_model", "google/gemini-3.8-flash")),
+                base_url=str(
+                    self.config.get("teacher_base_url", "https://openrouter.ai/api/v1")
+                ),
+                timeout_seconds=float(self.config.get("teacher_timeout_seconds", 90.0)),
+                temperature=float(self.config.get("teacher_temperature", 0.2)),
+                seed=self.config.get("teacher_seed"),
+            )
+            return TeacherSchedulerPolicy(gateway)
+        raise ValueError("learned orchestration requires a scheduler_policy or adapter")
 
     def _get_provider_kwargs(self) -> dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
@@ -446,23 +475,34 @@ class TradingAgentsGraph:
             )
         return write_report_tree(final_state, ticker, save_path)
 
-    def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
-        """Execute the graph and write the resulting state to disk and memory log."""
-        # Initialize state — inject memory log context for PM and the
-        # deterministically resolved instrument identity for all agents.
-        past_context = self.memory_log.get_past_context(company_name)
-        instrument_context = self.resolve_instrument_context(company_name, asset_type)
-        init_agent_state = self.propagator.create_initial_state(
+    def create_initial_state(
+        self,
+        company_name: str,
+        trade_date: str,
+        *,
+        asset_type: str = "stock",
+        past_context: str | None = None,
+        scheduler_task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create one mode-aware state without executing or persisting a run."""
+
+        context = (
+            self.memory_log.get_past_context(company_name)
+            if past_context is None
+            else past_context
+        )
+        state = self.propagator.create_initial_state(
             company_name,
             trade_date,
             asset_type=asset_type,
-            past_context=past_context,
-            instrument_context=instrument_context,
+            past_context=context,
+            instrument_context=self.resolve_instrument_context(company_name, asset_type),
         )
         if self.orchestration_mode != "static":
-            init_agent_state.update(
+            state.update(
                 {
-                    "scheduler_task_id": f"{company_name}:{trade_date}",
+                    "scheduler_task_id": scheduler_task_id
+                    or f"{company_name}:{trade_date}",
                     "scheduler_action": "",
                     "scheduler_step": 0,
                     "scheduler_history": [],
@@ -473,6 +513,15 @@ class TradingAgentsGraph:
                     "scheduler_agent_calls": 0,
                 }
             )
+        return state
+
+    def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
+        """Execute the graph and write the resulting state to disk and memory log."""
+        init_agent_state = self.create_initial_state(
+            company_name,
+            str(trade_date),
+            asset_type=asset_type,
+        )
         args = self.propagator.get_graph_args()
 
         # Inject thread_id so same ticker+date+graph-shape resumes; a different

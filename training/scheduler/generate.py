@@ -1,0 +1,184 @@
+"""CLI and library entry point for one-trajectory-per-task data generation."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
+
+from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
+from tradingagents.scheduler.teacher_policy import (
+    OpenRouterTeacherGateway,
+    TeacherSchedulerPolicy,
+)
+
+from .audit import audit_trajectory
+from .environment import TradingAgentsSchedulerEnvironment
+
+GENERATION_SCHEMA_VERSION = "scheduler-generation-v1"
+
+
+def load_tasks(path: str | Path, *, split: str | None = None) -> list[dict[str, Any]]:
+    source = Path(path)
+    tasks = []
+    with source.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                task = json.loads(line)
+                for field in ("task_id", "ticker", "trade_date"):
+                    if not task.get(field):
+                        raise ValueError(f"missing {field}")
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise ValueError(f"invalid task at {source}:{line_number}: {exc}") from exc
+            if split is None or task.get("split") == split:
+                tasks.append(task)
+    return tasks
+
+
+def generate_trajectories(
+    tasks: Iterable[dict[str, Any]],
+    *,
+    output_dir: str | Path,
+    mode: str,
+    run_id: str,
+    config: dict[str, Any],
+    selected_analysts: tuple[str, ...],
+    resume: bool = False,
+) -> dict[str, int]:
+    if mode not in {"static", "teacher"}:
+        raise ValueError("data generation mode must be static or teacher")
+    output = Path(output_dir)
+    raw_store = TrajectoryStore(output / "raw.jsonl")
+    accepted_store = TrajectoryStore(output / "accepted.jsonl")
+    rejected_store = TrajectoryStore(output / "rejected.jsonl")
+    policy = _teacher_policy(config) if mode == "teacher" else None
+    environment = TradingAgentsSchedulerEnvironment(
+        config,
+        selected_analysts=selected_analysts,
+    )
+    counts = {"accepted": 0, "rejected": 0, "skipped": 0}
+    for task in tasks:
+        identifier = _trajectory_id(task, mode, None if policy is None else policy.policy_id)
+        if raw_store.contains(identifier):
+            if not resume:
+                raise FileExistsError(
+                    f"trajectory already exists: {identifier}; pass --resume to skip it"
+                )
+            counts["skipped"] += 1
+            continue
+        result = environment.run(
+            task,
+            mode=mode,
+            run_id=run_id,
+            policy=policy,
+            past_context=str(task.get("past_context") or ""),
+            trajectory_id=identifier,
+        )
+        audit = audit_trajectory(result.trajectory)
+        raw_store.append(result.trajectory)
+        if audit.audit_status in {"accepted", "warning"}:
+            accepted_store.append(result.trajectory)
+            counts["accepted"] += 1
+        else:
+            rejected_store.append(result.trajectory)
+            counts["rejected"] += 1
+
+    write_json_atomic(
+        output / "generation_manifest.json",
+        {
+            "schema_version": GENERATION_SCHEMA_VERSION,
+            "run_id": run_id,
+            "mode": mode,
+            "trajectories_per_task": 1,
+            "selected_analysts": list(selected_analysts),
+            "teacher_model": None if policy is None else policy.gateway.model,
+            "counts": counts,
+        },
+    )
+    return counts
+
+
+def _teacher_policy(config: dict[str, Any]) -> TeacherSchedulerPolicy:
+    return TeacherSchedulerPolicy(
+        OpenRouterTeacherGateway(
+            model=str(config.get("teacher_model", "google/gemini-3.8-flash")),
+            base_url=str(config.get("teacher_base_url", "https://openrouter.ai/api/v1")),
+            timeout_seconds=float(config.get("teacher_timeout_seconds", 90.0)),
+            temperature=float(config.get("teacher_temperature", 0.2)),
+            seed=config.get("teacher_seed"),
+        )
+    )
+
+
+def _trajectory_id(
+    task: dict[str, Any], mode: str, policy_id: str | None
+) -> str:
+    source = ":".join(
+        (
+            str(task["task_id"]),
+            str(task.get("data_snapshot_id") or "none"),
+            mode,
+            policy_id or "static-langgraph-v1",
+        )
+    )
+    return f"{mode}-{hashlib.sha256(source.encode()).hexdigest()[:20]}"
+
+
+def _runtime_config() -> dict[str, Any]:
+    config = dict(DEFAULT_CONFIG)
+    overrides = {
+        "llm_provider": "TRADINGAGENTS_LLM_PROVIDER",
+        "quick_think_llm": "TRADINGAGENTS_QUICK_THINK_LLM",
+        "deep_think_llm": "TRADINGAGENTS_DEEP_THINK_LLM",
+        "backend_url": "TRADINGAGENTS_LLM_BACKEND_URL",
+        "teacher_model": "TRADINGAGENTS_TEACHER_MODEL",
+    }
+    for key, environment_name in overrides.items():
+        value = os.environ.get(environment_name)
+        if value:
+            config[key] = value
+    return config
+
+
+def main() -> None:
+    load_dotenv()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tasks", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--mode", choices=("static", "teacher"), required=True)
+    parser.add_argument("--split", default="train")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--run-id")
+    parser.add_argument("--analysts", default="market,social,news,fundamentals")
+    args = parser.parse_args()
+
+    tasks = load_tasks(args.tasks, split=args.split)
+    if args.limit is not None:
+        tasks = tasks[: args.limit]
+    run_id = args.run_id or datetime.now(UTC).strftime(f"{args.mode}-%Y%m%dT%H%M%SZ")
+    selected = tuple(value.strip() for value in args.analysts.split(",") if value.strip())
+    counts = generate_trajectories(
+        tasks,
+        output_dir=args.output_dir,
+        mode=args.mode,
+        run_id=run_id,
+        config=_runtime_config(),
+        selected_analysts=selected,
+        resume=args.resume,
+    )
+    print(json.dumps(counts, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
