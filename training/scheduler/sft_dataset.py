@@ -49,6 +49,19 @@ class SchedulerSFTDataset(Dataset):
         return self.rows[index]
 
 
+def validate_task_isolation(
+    train_rows: Sequence[dict[str, Any]],
+    validation_rows: Sequence[dict[str, Any]],
+) -> None:
+    train_tasks = {str(row["task_id"]) for row in train_rows}
+    validation_tasks = {str(row["task_id"]) for row in validation_rows}
+    overlap = train_tasks & validation_tasks
+    if overlap:
+        raise ValueError(
+            f"SFT Train/Validation task leakage detected: {len(overlap)} overlapping tasks"
+        )
+
+
 class HierarchicalSourceSampler(Sampler[int]):
     """Choose source, task, trajectory, then step to avoid long-path dominance."""
 

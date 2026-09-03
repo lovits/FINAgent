@@ -11,6 +11,7 @@ from training.scheduler.sft_dataset import (
     HierarchicalSourceSampler,
     MaskedActionCollator,
     SchedulerSFTDataset,
+    validate_task_isolation,
 )
 from training.scheduler.sft_loss import masked_action_cross_entropy
 
@@ -46,6 +47,16 @@ def test_hierarchical_sampler_does_not_let_long_trajectory_dominate() -> None:
     sampler = HierarchicalSourceSampler(rows, teacher_probability=0.0)
     selected_tasks = Counter(rows[index]["task_id"] for index in sampler)
     assert selected_tasks["short"] > 25
+
+
+def test_sft_train_and_validation_tasks_must_be_disjoint() -> None:
+    validate_task_isolation([_row(0, task_id="train-1")], [_row(1, task_id="valid-1")])
+
+    with pytest.raises(ValueError, match="task leakage"):
+        validate_task_isolation(
+            [_row(0, task_id="shared")],
+            [_row(1, task_id="shared")],
+        )
 
 
 def test_collator_masks_actions_and_rejects_overflow() -> None:

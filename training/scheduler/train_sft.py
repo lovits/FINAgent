@@ -16,6 +16,7 @@ from .sft_dataset import (
     HierarchicalSourceSampler,
     MaskedActionCollator,
     SchedulerSFTDataset,
+    validate_task_isolation,
 )
 from .sft_loss import masked_action_cross_entropy
 
@@ -56,6 +57,9 @@ def train(config: SFTTrainConfig) -> dict[str, float]:
 
     random.seed(config.seed)
     torch.manual_seed(config.seed)
+    train_data = SchedulerSFTDataset(config.train_path)
+    validation_data = SchedulerSFTDataset(config.validation_path)
+    validate_task_isolation(train_data.rows, validation_data.rows)
     accelerator = Accelerator(
         gradient_accumulation_steps=config.gradient_accumulation_steps
     )
@@ -72,8 +76,6 @@ def train(config: SFTTrainConfig) -> dict[str, float]:
         ),
         training=True,
     )
-    train_data = SchedulerSFTDataset(config.train_path)
-    validation_data = SchedulerSFTDataset(config.validation_path)
     sampler = HierarchicalSourceSampler(
         train_data.rows,
         total_epochs=config.epochs,
