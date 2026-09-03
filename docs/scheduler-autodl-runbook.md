@@ -44,7 +44,7 @@ Key不写入配置、Prompt、日志、轨迹或Git。
   --model google/gemini-3.8-flash
 ```
 
-交互式LangGraph不能使用带`:batch`后缀的模型ID；Batch模型只能通过OpenRouter Batch API运行。
+当前方案的数据生成与交互调试统一使用同步模型`google/gemini-3.8-flash`，不使用`:batch`模型。
 
 ## 3. 准备股票列表
 
