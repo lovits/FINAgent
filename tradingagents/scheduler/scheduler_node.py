@@ -108,7 +108,7 @@ class SchedulerNode:
         )
         try:
             decision = self.policy.select_action(context)
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, RuntimeError) as exc:
             raise SchedulerRuntimeError(f"invalid_policy_decision:{exc}") from exc
         if decision.action not in mask.valid_actions:
             raise SchedulerRuntimeError(f"masked_policy_action:{decision.action.value}")

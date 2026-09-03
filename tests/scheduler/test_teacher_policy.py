@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import requests
 
 from tradingagents.scheduler.actions import SchedulerAction
 from tradingagents.scheduler.contracts import SchedulerContext
@@ -91,3 +92,17 @@ def test_teacher_rejects_second_invalid_output() -> None:
     )
     with pytest.raises(TeacherGatewayError, match="correction failed"):
         TeacherSchedulerPolicy(gateway).select_action(_context())
+
+
+def test_gateway_preserves_sanitized_provider_error() -> None:
+    response = requests.Response()
+    response.status_code = 403
+    response._content = json.dumps(
+        {"error": {"message": "provider terms rejected request"}}
+    ).encode()
+    gateway = OpenRouterTeacherGateway(
+        environ={"OPENROUTER_API_KEY": "test-only"},
+        transport=lambda *args, **kwargs: response,
+    )
+    with pytest.raises(TeacherGatewayError, match="HTTP 403.*provider terms"):
+        gateway.request([], (SchedulerAction.MARKET,))

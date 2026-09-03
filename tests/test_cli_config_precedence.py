@@ -67,3 +67,19 @@ def test_checkpoint_flag_overrides_env(flag):
     with mock.patch.object(m, "DEFAULT_CONFIG", patched):
         cfg = m._build_run_config(SELECTIONS, checkpoint=flag)
     assert cfg["checkpoint_enabled"] is flag
+
+
+def test_scheduler_cli_options_override_defaults():
+    cfg = m._build_run_config(
+        SELECTIONS,
+        checkpoint=None,
+        orchestration_mode="learned",
+        scheduler_adapter_path="/models/scheduler-adapter",
+    )
+    assert cfg["orchestration_mode"] == "learned"
+    assert cfg["scheduler_adapter_path"] == "/models/scheduler-adapter"
+
+
+def test_scheduler_cli_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="orchestration_mode"):
+        m._build_run_config(SELECTIONS, checkpoint=None, orchestration_mode="random")

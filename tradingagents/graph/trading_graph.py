@@ -35,6 +35,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
 from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext, SchedulerPolicy
+from tradingagents.scheduler.scheduler_node import SchedulerRuntimeError
 from tradingagents.scheduler.teacher_policy import (
     OpenRouterTeacherGateway,
     TeacherSchedulerPolicy,
@@ -95,13 +96,25 @@ class TradingAgentsGraph:
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
-        self.orchestration_mode = str(self.config.get("orchestration_mode", "static"))
+        self.requested_orchestration_mode = str(
+            self.config.get("orchestration_mode", "static")
+        )
+        self.orchestration_mode = self.requested_orchestration_mode
         if self.orchestration_mode not in {"static", "teacher", "learned"}:
             raise ValueError(
                 "orchestration_mode must be 'static', 'teacher', or 'learned', "
                 f"got {self.orchestration_mode!r}"
             )
-        self.scheduler_policy = self._resolve_scheduler_policy(scheduler_policy)
+        self.scheduler_fallback_reason = None
+        try:
+            self.scheduler_policy = self._resolve_scheduler_policy(scheduler_policy)
+        except (ImportError, OSError, ValueError) as exc:
+            if not self.config.get("scheduler_fallback_enabled", True):
+                raise
+            self.scheduler_policy = None
+            self.scheduler_fallback_reason = f"scheduler_policy_load_failed:{exc}"
+            self.orchestration_mode = "static"
+            logger.warning("Falling back to Static orchestration: %s", exc)
 
         # Update the interface's config
         set_config(self.config)
@@ -199,7 +212,9 @@ class TradingAgentsGraph:
                 seed=self.config.get("teacher_seed"),
             )
             return TeacherSchedulerPolicy(gateway)
-        raise ValueError("learned orchestration requires a scheduler_policy or adapter")
+        from tradingagents.scheduler.hf_policy import load_hf_scheduler_policy
+
+        return load_hf_scheduler_policy(self.config)
 
     def _get_provider_kwargs(self) -> dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
@@ -453,12 +468,27 @@ class TradingAgentsGraph:
                 logger.info("Starting fresh for %s on %s", company_name, trade_date)
 
         try:
-            return self._run_graph(company_name, trade_date, asset_type=asset_type)
+            try:
+                return self._run_graph(company_name, trade_date, asset_type=asset_type)
+            except SchedulerRuntimeError as exc:
+                if (
+                    self.orchestration_mode == "static"
+                    or not self.config.get("scheduler_fallback_enabled", True)
+                ):
+                    raise
+                self._activate_static_fallback(exc.reason)
+                return self._run_graph(company_name, trade_date, asset_type=asset_type)
         finally:
             if self._checkpointer_ctx is not None:
                 self._checkpointer_ctx.__exit__(None, None, None)
                 self._checkpointer_ctx = None
                 self.graph = self.workflow.compile()
+
+    def _activate_static_fallback(self, reason: str) -> None:
+        self.scheduler_fallback_reason = reason
+        self.orchestration_mode = "static"
+        self.workflow = self.graph_setup.setup_graph(self.selected_analysts)
+        self.graph = self.workflow.compile()
 
     def save_reports(self, final_state, ticker, save_path=None) -> Path:
         """Write the markdown report tree for a completed run, like the CLI does.
@@ -511,6 +541,13 @@ class TradingAgentsGraph:
                     "scheduler_no_progress_count": 0,
                     "scheduler_last_state_signature": "",
                     "scheduler_agent_calls": 0,
+                }
+            )
+        if self.scheduler_fallback_reason:
+            state.update(
+                {
+                    "scheduler_requested_mode": self.requested_orchestration_mode,
+                    "scheduler_fallback_reason": self.scheduler_fallback_reason,
                 }
             )
         return state

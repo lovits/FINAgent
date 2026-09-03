@@ -1,0 +1,20 @@
+{
+  "rollout_path": "artifacts/scheduler/qwen3-1p7b/rollouts/iteration-001/grpo.jsonl",
+  "sft_adapter_path": "artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best",
+  "output_dir": "artifacts/scheduler/qwen3-1p7b/grpo/iteration-001",
+  "base_model": "Qwen/Qwen3-1.7B",
+  "base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "dtype": "bfloat16",
+  "attention_implementation": "sdpa",
+  "max_length": 32768,
+  "rollout_temperature": 0.8,
+  "micro_batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "epochs": 1,
+  "learning_rate": 0.00001,
+  "weight_decay": 0.01,
+  "max_grad_norm": 1.0,
+  "clip_epsilon": 0.2,
+  "kl_beta": 0.01,
+  "seed": 42
+}

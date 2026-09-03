@@ -99,8 +99,14 @@ class OpenRouterTeacherGateway:
             )
             response.raise_for_status()
             body = response.json()
+        except requests.HTTPError as exc:
+            status = getattr(exc.response, "status_code", "unknown")
+            message = self._http_error_message(exc.response)
+            raise TeacherGatewayError(
+                f"Teacher request failed with HTTP {status}: {message}"
+            ) from exc
         except requests.RequestException as exc:
-            raise TeacherGatewayError("Teacher request failed") from exc
+            raise TeacherGatewayError(f"Teacher request failed: {type(exc).__name__}") from exc
 
         try:
             raw_output = body["choices"][0]["message"]["content"]
@@ -117,6 +123,17 @@ class OpenRouterTeacherGateway:
         if action not in valid_actions:
             raise TeacherOutputError("action_not_in_valid_actions", raw_output)
         return action, raw_output
+
+    @staticmethod
+    def _http_error_message(response: Any) -> str:
+        try:
+            body = response.json()
+            message = body.get("error", {}).get("message")
+            if message:
+                return str(message)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return "provider rejected the request"
 
 
 class TeacherSchedulerPolicy:

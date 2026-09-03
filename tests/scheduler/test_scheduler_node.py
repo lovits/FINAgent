@@ -66,6 +66,15 @@ def test_scheduler_node_turns_policy_errors_into_runtime_errors() -> None:
         node(_state())
 
 
+def test_scheduler_node_wraps_teacher_gateway_errors() -> None:
+    def fail(_):
+        raise RuntimeError("provider unavailable")
+
+    node = SchedulerNode(CallableSchedulerPolicy(fail), ("market",))
+    with pytest.raises(SchedulerRuntimeError, match="provider unavailable"):
+        node(_state())
+
+
 def test_route_requires_scheduler_action() -> None:
     with pytest.raises(SchedulerRuntimeError, match="scheduler_action_missing"):
         route_scheduler_action({})

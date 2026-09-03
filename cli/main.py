@@ -971,7 +971,12 @@ def format_tool_args(args, max_length=80) -> str:
         return result[:max_length - 3] + "..."
     return result
 
-def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
+def _build_run_config(
+    selections: dict,
+    checkpoint: bool | None,
+    orchestration_mode: str | None = None,
+    scheduler_adapter_path: str | None = None,
+) -> dict:
     """Assemble the run config from interactive selections, honoring env precedence.
 
     Round counts and checkpoint follow "explicit env/flag wins": an env-applied
@@ -998,14 +1003,29 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
     if checkpoint is not None:
         config["checkpoint_enabled"] = checkpoint
+    if orchestration_mode is not None:
+        if orchestration_mode not in {"static", "teacher", "learned"}:
+            raise ValueError("orchestration_mode must be static, teacher, or learned")
+        config["orchestration_mode"] = orchestration_mode
+    if scheduler_adapter_path is not None:
+        config["scheduler_adapter_path"] = scheduler_adapter_path
     return config
 
 
-def run_analysis(checkpoint: bool | None = None):
+def run_analysis(
+    checkpoint: bool | None = None,
+    orchestration_mode: str | None = None,
+    scheduler_adapter_path: str | None = None,
+):
     # First get all user selections
     selections = get_user_selections()
 
-    config = _build_run_config(selections, checkpoint)
+    config = _build_run_config(
+        selections,
+        checkpoint,
+        orchestration_mode,
+        scheduler_adapter_path,
+    )
 
     # Create stats callback handler for tracking LLM/tool calls
     stats_handler = StatsCallbackHandler()
@@ -1098,10 +1118,11 @@ def run_analysis(checkpoint: bool | None = None):
         )
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
-        # Update agent status to in_progress for the first analyst
-        first_analyst = get_initial_analyst_node(analyst_execution_plan)
-        message_buffer.update_agent_status(first_analyst, "in_progress")
-        analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
+        # Static starts at the first analyst; dynamic modes start at Scheduler.
+        if config["orchestration_mode"] == "static":
+            first_analyst = get_initial_analyst_node(analyst_execution_plan)
+            message_buffer.update_agent_status(first_analyst, "in_progress")
+            analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
         # Create spinner text
@@ -1114,14 +1135,10 @@ def run_analysis(checkpoint: bool | None = None):
         # Resolve the instrument identity once here so all agents anchor to
         # the real company (#814); the CLI builds state directly rather than
         # going through propagate(), so this must happen on the CLI path too.
-        instrument_context = graph.resolve_instrument_context(
-            selections["ticker"], selections["asset_type"]
-        )
-        init_agent_state = graph.propagator.create_initial_state(
+        init_agent_state = graph.create_initial_state(
             selections["ticker"],
             selections["analysis_date"],
             asset_type=selections["asset_type"],
-            instrument_context=instrument_context,
         )
         # Pass callbacks to graph config for tool execution tracking
         # (LLM tracking is handled separately via LLM constructor)
@@ -1293,13 +1310,27 @@ def analyze(
         "--clear-checkpoints",
         help="Delete all saved checkpoints before running (force fresh start).",
     ),
+    orchestration_mode: str | None = typer.Option(
+        None,
+        "--orchestration-mode",
+        help="Agent routing mode: static, teacher, or learned.",
+    ),
+    scheduler_adapter_path: str | None = typer.Option(
+        None,
+        "--scheduler-adapter-path",
+        help="LoRA adapter directory required by learned mode.",
+    ),
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
     try:
-        run_analysis(checkpoint=checkpoint)
+        run_analysis(
+            checkpoint=checkpoint,
+            orchestration_mode=orchestration_mode,
+            scheduler_adapter_path=scheduler_adapter_path,
+        )
     except _NO_CONSOLE_ERRORS:
         # A terminal with no console buffer cannot host the interactive prompts.
         # Emit one actionable line on stderr instead of a prompt_toolkit

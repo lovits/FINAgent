@@ -1,0 +1,16 @@
+{
+  "tasks_path": "data/scheduler/v1/tasks/train_60.jsonl",
+  "static_trajectories_path": "data/scheduler/v1/static/accepted.jsonl",
+  "active_adapter_path": "artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best",
+  "reference_adapter_path": "artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best",
+  "output_dir": "artifacts/scheduler/qwen3-1p7b/rollouts/iteration-001",
+  "run_id": "grpo-iteration-001",
+  "base_model": "Qwen/Qwen3-1.7B",
+  "base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "group_size": 4,
+  "action_temperature": 0.8,
+  "max_context_tokens": 32768,
+  "max_steps": 16,
+  "selected_analysts": ["market", "social", "news", "fundamentals"],
+  "seed": 42
+}

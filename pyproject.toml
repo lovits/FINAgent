@@ -44,6 +44,13 @@ dev = [
 bedrock = [
     "langchain-aws>=1.5.0",
 ]
+scheduler-train = [
+    "torch>=2.5",
+    "transformers>=5.0",
+    "peft>=0.20",
+    "accelerate>=1.2",
+    "datasets>=3.2",
+]
 
 [project.scripts]
 tradingagents = "cli.main:app"

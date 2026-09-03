@@ -74,9 +74,23 @@ def test_teacher_mode_builds_default_openrouter_policy(monkeypatch, tmp_path) ->
     )
 
 
-def test_learned_mode_requires_policy_until_adapter_loader_is_configured(tmp_path) -> None:
-    with pytest.raises(ValueError, match="learned orchestration"):
-        TradingAgentsGraph(config=_config(tmp_path, "learned"))
+def test_learned_mode_load_failure_falls_back_to_static(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "tradingagents.graph.trading_graph.create_llm_client", lambda **_: _DummyClient()
+    )
+    graph = TradingAgentsGraph(
+        selected_analysts=("market",),
+        config=_config(tmp_path, "learned"),
+    )
+    assert graph.requested_orchestration_mode == "learned"
+    assert graph.orchestration_mode == "static"
+    assert graph.scheduler_fallback_reason.startswith("scheduler_policy_load_failed:")
+
+
+def test_learned_mode_load_failure_can_be_fail_closed(tmp_path) -> None:
+    config = {**_config(tmp_path, "learned"), "scheduler_fallback_enabled": False}
+    with pytest.raises(ValueError, match="scheduler_adapter_path"):
+        TradingAgentsGraph(config=config)
 
 
 def test_unknown_mode_is_rejected(tmp_path) -> None:

@@ -85,3 +85,5 @@ class AgentState(MessagesState):
     scheduler_no_progress_count: Annotated[int, "Consecutive decisions without state progress"]
     scheduler_last_state_signature: Annotated[str, "Business-state signature before the latest action"]
     scheduler_agent_calls: Annotated[int, "Expert Agent calls selected by the scheduler"]
+    scheduler_requested_mode: Annotated[str, "Requested orchestration mode"]
+    scheduler_fallback_reason: Annotated[str, "Reason a dynamic run fell back to Static"]

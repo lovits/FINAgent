@@ -1,0 +1,16 @@
+{
+  "portfolio_quality_weight": 0.7,
+  "trader_quality_weight": 0.3,
+  "format_compliance_weight": 0.1,
+  "completion_bonus": 0.2,
+  "agent_call_cost": 0.02,
+  "tool_call_cost": 0.005,
+  "token_cost_per_1k": 0.005,
+  "latency_cost_per_second": 0.0,
+  "no_progress_penalty": 0.1,
+  "invalid_penalty": 1.0,
+  "incomplete_penalty": 1.0,
+  "fallback_penalty": 0.25,
+  "min_reward": -1.5,
+  "max_reward": 1.2
+}

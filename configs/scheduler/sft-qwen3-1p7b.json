@@ -1,0 +1,21 @@
+{
+  "train_path": "data/scheduler/v1/sft/train.jsonl",
+  "validation_path": "data/scheduler/v1/sft/validation.jsonl",
+  "output_dir": "artifacts/scheduler/qwen3-1p7b/sft",
+  "base_model": "Qwen/Qwen3-1.7B",
+  "base_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "dtype": "bfloat16",
+  "attention_implementation": "sdpa",
+  "max_length": 32768,
+  "micro_batch_size": 1,
+  "gradient_accumulation_steps": 16,
+  "epochs": 2,
+  "learning_rate": 0.00005,
+  "warmup_ratio": 0.05,
+  "weight_decay": 0.01,
+  "max_grad_norm": 1.0,
+  "lora_rank": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "seed": 42
+}
