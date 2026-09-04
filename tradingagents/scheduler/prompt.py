@@ -10,8 +10,8 @@ from .actions import SchedulerAction, parse_action
 from .contracts import SchedulerContext
 from .registry import AGENT_CATALOG_VERSION, registry_for_analysts
 
-PROMPT_VERSION = "scheduler-prompt-v5"
-TEACHER_PROMPT_VERSION = "teacher-scheduler-v5"
+PROMPT_VERSION = "scheduler-prompt-v6"
+TEACHER_PROMPT_VERSION = "teacher-scheduler-v6"
 STATE_SCHEMA_VERSION = "scheduler-state-v1"
 COMPLETION_CONTRACT_VERSION = "completion-v1"
 ORCHESTRATION_PROFILE_VERSION = "multi-analyst-shallow-v1"
@@ -110,16 +110,8 @@ def completion_contract(
     }
 
 
-def agent_index(selected_analysts: tuple[str, ...]) -> list[dict[str, object]]:
-    return [
-        {
-            "action": spec.action.value,
-            "node_name": spec.node_name,
-            "purpose": spec.purpose,
-            "writes": spec.writes,
-        }
-        for spec in registry_for_analysts(selected_analysts)
-    ]
+def agent_catalog(selected_analysts: tuple[str, ...]) -> list[dict[str, object]]:
+    return [spec.to_prompt_dict() for spec in registry_for_analysts(selected_analysts)]
 
 
 def current_valid_agent_cards(
@@ -228,8 +220,8 @@ def build_scheduler_input(
             _json(orchestration_profile(selected_analysts)),
         ),
         (
-            f'AGENT_INDEX version="{AGENT_CATALOG_VERSION}"',
-            _json(agent_index(selected_analysts)),
+            f'AGENT_CATALOG version="{AGENT_CATALOG_VERSION}"',
+            _json(agent_catalog(selected_analysts)),
         ),
         (
             f'CURRENT_VALID_AGENT_CARDS version="{AGENT_CATALOG_VERSION}"',

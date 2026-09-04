@@ -103,7 +103,7 @@ def test_trajectory_provenance_records_versions_without_secrets() -> None:
     assert provenance["research_depth"] == "shallow"
     assert provenance["output_language"] == "Chinese"
     assert provenance["action_schema_version"] == "scheduler-actions-v1"
-    assert provenance["scheduler_prompt_version"] == "scheduler-prompt-v5"
+    assert provenance["scheduler_prompt_version"] == "scheduler-prompt-v6"
     assert provenance["orchestration_profile_version"] == (
         "multi-analyst-shallow-v1"
     )

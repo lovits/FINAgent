@@ -3,7 +3,7 @@ import json
 from tradingagents.scheduler.actions import SchedulerAction
 from tradingagents.scheduler.contracts import SchedulerContext
 from tradingagents.scheduler.prompt import (
-    agent_index,
+    agent_catalog,
     build_scheduler_input,
     build_teacher_correction,
     build_teacher_messages,
@@ -52,7 +52,7 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
     assert "<ACT_SENTIMENT>" in prompt
     assert '"remaining_steps": 14' in prompt
     assert "tool_policy_owner" in prompt
-    assert '<AGENT_INDEX version="agent-catalog-v2">' in prompt
+    assert '<AGENT_CATALOG version="agent-catalog-v2">' in prompt
     assert '<CURRENT_VALID_AGENT_CARDS version="agent-catalog-v2">' in prompt
     assert "<ROUTING_FEATURES>" in prompt
     assert 'ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1"' in prompt
@@ -68,19 +68,20 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
         '"news_report", "fundamentals_report"]'
     ) in prompt
     assert '"internal_tools": ["get_news"]' in prompt
-    assert "get_stock_data" not in prompt
+    assert "get_stock_data" in prompt
 
 
-def test_agent_index_is_brief_and_only_valid_agents_get_detailed_cards() -> None:
+def test_full_catalog_is_preserved_and_valid_agents_are_repeated_for_focus() -> None:
     selected = ("market", "social", "news", "fundamentals")
-    index = agent_index(selected)
+    catalog = agent_catalog(selected)
     cards = current_valid_agent_cards(
         selected,
         (SchedulerAction.SENTIMENT, SchedulerAction.BULL),
     )
 
-    assert len(index) == 12
-    assert all("internal_tools" not in item for item in index)
+    assert len(catalog) == 12
+    assert all("completion_signal" in item for item in catalog)
+    assert any("get_stock_data" in item["internal_tools"] for item in catalog)
     assert {item["action"] for item in cards} == {"<ACT_SENTIMENT>", "<ACT_BULL>"}
     assert all("completion_signal" in item for item in cards)
 
