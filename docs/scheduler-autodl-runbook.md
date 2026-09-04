@@ -310,23 +310,32 @@ artifacts/scheduler/qwen3-1p7b/sft/checkpoint-best
 
 ## 18. 在应用中切换模式
 
+直接运行时，CLI首先显示编排模式菜单，可选择`Static LangGraph`或
+`Teacher Dynamic Scheduler`：
+
+```bash
+.venv/bin/tradingagents
+```
+
+显式参数会跳过菜单，适合脚本或自动化运行。
+
 Static：
 
 ```bash
-.venv/bin/tradingagents analyze --orchestration-mode static
+.venv/bin/tradingagents --orchestration-mode static
 ```
 
 Teacher：
 
 ```bash
-.venv/bin/tradingagents analyze --orchestration-mode teacher
+.venv/bin/tradingagents --orchestration-mode teacher
 ```
 
 Learned：
 
 ```bash
 export TRADINGAGENTS_SCHEDULER_BASE_MODEL='/root/autodl-tmp/models/Qwen3-1.7B'
-.venv/bin/tradingagents analyze \
+.venv/bin/tradingagents \
   --orchestration-mode learned \
   --scheduler-adapter-path artifacts/scheduler/qwen3-1p7b/grpo/iteration-001
 ```

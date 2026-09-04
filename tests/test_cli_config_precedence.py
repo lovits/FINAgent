@@ -13,6 +13,7 @@ import cli.main as m
 
 # Minimal selections dict shaped like get_user_selections()'s return value.
 SELECTIONS = {
+    "orchestration_mode": "static",
     "research_depth": 5,
     "shallow_thinker": "gpt-5.4-mini",
     "deep_thinker": "gpt-5.5",
@@ -78,6 +79,14 @@ def test_scheduler_cli_options_override_defaults():
     )
     assert cfg["orchestration_mode"] == "learned"
     assert cfg["scheduler_adapter_path"] == "/models/scheduler-adapter"
+
+
+def test_interactive_orchestration_selection_reaches_config():
+    cfg = m._build_run_config(
+        {**SELECTIONS, "orchestration_mode": "teacher"},
+        checkpoint=None,
+    )
+    assert cfg["orchestration_mode"] == "teacher"
 
 
 def test_scheduler_cli_rejects_unknown_mode():

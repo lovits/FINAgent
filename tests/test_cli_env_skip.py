@@ -36,6 +36,7 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
         import cli.main as m
 
         env = {
+            "TRADINGAGENTS_ORCHESTRATION_MODE": "teacher",
             "TRADINGAGENTS_LLM_PROVIDER": "openai",
             "TRADINGAGENTS_DEEP_THINK_LLM": "kimi-k2.5",
             "TRADINGAGENTS_QUICK_THINK_LLM": "deepseek-v4-pro",
@@ -44,6 +45,7 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
         }
         fake_cfg = dict(m.DEFAULT_CONFIG)
         fake_cfg.update({
+            "orchestration_mode": "teacher",
             "llm_provider": "openai",
             "backend_url": "https://opencode.ai/zen/go/v1",
             "quick_think_llm": "deepseek-v4-pro",
@@ -57,6 +59,7 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
              mock.patch.object(m, "display_announcements"), \
              mock.patch.object(m, "get_ticker", return_value="AAPL"), \
              mock.patch.object(m, "get_analysis_date", return_value="2026-05-29"), \
+             mock.patch.object(m, "select_orchestration_mode") as prompt_mode, \
              mock.patch.object(m, "select_analysts", return_value=[]), \
              mock.patch.object(m, "select_research_depth", return_value=1), \
              mock.patch.object(m, "ensure_api_key") as ensure_key, \
@@ -68,6 +71,7 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
 
         # None of the LLM selection prompts should have been shown.
         prompt_provider.assert_not_called()
+        prompt_mode.assert_not_called()
         prompt_lang.assert_not_called()
         prompt_quick.assert_not_called()
         prompt_deep.assert_not_called()
@@ -76,6 +80,7 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
 
         # The env values flow into the returned selections.
         self.assertEqual(sel["llm_provider"], "openai")
+        self.assertEqual(sel["orchestration_mode"], "teacher")
         self.assertEqual(sel["backend_url"], "https://opencode.ai/zen/go/v1")
         self.assertEqual(sel["shallow_thinker"], "deepseek-v4-pro")
         self.assertEqual(sel["deep_thinker"], "kimi-k2.5")
@@ -100,6 +105,7 @@ class TestResearchDepthSkippedFromEnv(unittest.TestCase):
              mock.patch.object(m, "display_announcements"), \
              mock.patch.object(m, "get_ticker", return_value="AAPL"), \
              mock.patch.object(m, "get_analysis_date", return_value="2026-05-29"), \
+             mock.patch.object(m, "select_orchestration_mode", return_value="static"), \
              mock.patch.object(m, "select_analysts", return_value=[]), \
              mock.patch.object(m, "select_research_depth") as prompt_depth, \
              mock.patch.object(m, "ensure_api_key"), \
@@ -130,6 +136,7 @@ class TestReasoningEffortSkippedFromEnv(unittest.TestCase):
              mock.patch.object(m, "display_announcements"), \
              mock.patch.object(m, "get_ticker", return_value="AAPL"), \
              mock.patch.object(m, "get_analysis_date", return_value="2026-05-29"), \
+             mock.patch.object(m, "select_orchestration_mode", return_value="static"), \
              mock.patch.object(m, "select_analysts", return_value=[]), \
              mock.patch.object(m, "select_research_depth", return_value=1), \
              mock.patch.object(m, "ensure_api_key"), \

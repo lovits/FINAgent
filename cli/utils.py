@@ -132,6 +132,36 @@ def get_analysis_date() -> str:
     return date.strip()
 
 
+def select_orchestration_mode() -> str:
+    """Select the currently runnable Agent orchestration backend."""
+
+    choice = questionary.select(
+        "Select Your [Orchestration Mode]:",
+        choices=[
+            questionary.Choice(
+                "Static LangGraph - original fixed Agent routing",
+                value="static",
+            ),
+            questionary.Choice(
+                "Teacher Dynamic Scheduler - OpenRouter model selects the next Agent",
+                value="teacher",
+            ),
+        ],
+        instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
+        style=questionary.Style(
+            [
+                ("selected", "fg:yellow noinherit"),
+                ("highlighted", "fg:yellow noinherit"),
+                ("pointer", "fg:yellow noinherit"),
+            ]
+        ),
+    ).ask()
+    if choice is None:
+        console.print("\n[red]No orchestration mode selected. Exiting...[/red]")
+        exit(1)
+    return choice
+
+
 def select_analysts(asset_type: AssetType = AssetType.STOCK) -> list[AnalystType]:
     """Select analysts using an interactive checkbox."""
     available_analysts = filter_analysts_for_asset_type(

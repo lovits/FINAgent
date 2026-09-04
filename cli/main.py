@@ -38,6 +38,7 @@ from cli.utils import (
     select_analysts,
     select_deep_thinking_agent,
     select_llm_provider,
+    select_orchestration_mode,
     select_research_depth,
     select_shallow_thinking_agent,
 )
@@ -492,7 +493,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
-def get_user_selections():
+def get_user_selections(orchestration_mode: str | None = None):
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
     with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
@@ -545,10 +546,37 @@ def get_user_selections():
         console.print(create_question_box(box_title, box_body))
         return prompt_fn()
 
-    # Step 1: Ticker symbol
+    # Step 1: Agent orchestration mode. An explicit CLI option wins over env.
+    if orchestration_mode is not None:
+        if orchestration_mode not in {"static", "teacher", "learned"}:
+            raise ValueError("orchestration_mode must be static, teacher, or learned")
+        selected_orchestration_mode = orchestration_mode
+        console.print(
+            "[green]✓ Orchestration mode from CLI:[/green] "
+            f"{selected_orchestration_mode}"
+        )
+    elif os.environ.get("TRADINGAGENTS_ORCHESTRATION_MODE"):
+        selected_orchestration_mode = str(DEFAULT_CONFIG["orchestration_mode"])
+        if selected_orchestration_mode not in {"static", "teacher", "learned"}:
+            raise ValueError("orchestration_mode must be static, teacher, or learned")
+        console.print(
+            "[green]✓ Orchestration mode from environment:[/green] "
+            f"{selected_orchestration_mode}"
+        )
+    else:
+        console.print(
+            create_question_box(
+                "Step 1: Orchestration Mode",
+                "Choose original Static LangGraph or Teacher dynamic Agent routing",
+                "Static LangGraph",
+            )
+        )
+        selected_orchestration_mode = select_orchestration_mode()
+
+    # Step 2: Ticker symbol
     console.print(
         create_question_box(
-            "Step 1: Ticker Symbol",
+            "Step 2: Ticker Symbol",
             "Enter the ticker, with exchange suffix when needed (e.g. SPY, 0700.HK, BTC-USD)",
             "SPY",
         )
@@ -562,18 +590,18 @@ def get_user_selections():
             f"[green]Detected asset type:[/green] {asset_type.value}"
         )
 
-    # Step 2: Analysis date
+    # Step 3: Analysis date
     default_date = datetime.datetime.now().strftime("%Y-%m-%d")
     console.print(
         create_question_box(
-            "Step 2: Analysis Date",
+            "Step 3: Analysis Date",
             "Enter the analysis date (YYYY-MM-DD)",
             default_date,
         )
     )
     analysis_date = get_analysis_date()
 
-    # Step 3: Output language (skipped when set via TRADINGAGENTS_OUTPUT_LANGUAGE)
+    # Step 4: Output language (skipped when set via TRADINGAGENTS_OUTPUT_LANGUAGE)
     if os.environ.get("TRADINGAGENTS_OUTPUT_LANGUAGE"):
         output_language = DEFAULT_CONFIG["output_language"]
         console.print(
@@ -582,16 +610,16 @@ def get_user_selections():
     else:
         console.print(
             create_question_box(
-                "Step 3: Output Language",
+                "Step 4: Output Language",
                 "Select the language for analyst reports and final decision"
             )
         )
         output_language = ask_output_language()
 
-    # Step 4: Select analysts
+    # Step 5: Select analysts
     console.print(
         create_question_box(
-            "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
+            "Step 5: Analysts Team", "Select your LLM analyst agents for the analysis"
         )
     )
     selected_analysts = select_analysts(asset_type)
@@ -599,7 +627,7 @@ def get_user_selections():
         f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
     )
 
-    # Step 5: Research depth (skipped when both round counts are set via env).
+    # Step 6: Research depth (skipped when both round counts are set via env).
     # Research depth maps to the debate + risk round counts; when both are
     # supplied through TRADINGAGENTS_MAX_DEBATE_ROUNDS / _MAX_RISK_ROUNDS we keep
     # the run non-interactive and honor the env values (#977).
@@ -616,12 +644,12 @@ def get_user_selections():
     else:
         console.print(
             create_question_box(
-                "Step 5: Research Depth", "Select your research depth level"
+                "Step 6: Research Depth", "Select your research depth level"
             )
         )
         selected_research_depth = select_research_depth()
 
-    # Step 6: LLM Provider (skipped when set via TRADINGAGENTS_LLM_PROVIDER).
+    # Step 7: LLM Provider (skipped when set via TRADINGAGENTS_LLM_PROVIDER).
     # The backend URL comes from TRADINGAGENTS_LLM_BACKEND_URL when set,
     # otherwise the provider's default endpoint — the same value the menu
     # would have picked.
@@ -638,7 +666,7 @@ def get_user_selections():
     else:
         console.print(
             create_question_box(
-                "Step 6: LLM Provider", "Select your LLM provider"
+                "Step 7: LLM Provider", "Select your LLM provider"
             )
         )
         selected_llm_provider, backend_url = select_llm_provider()
@@ -674,7 +702,7 @@ def get_user_selections():
         # doesn't fail later at the first API call.
         ensure_api_key(selected_llm_provider)
 
-    # Step 7: Thinking agents (skipped when either model is set via environment)
+    # Step 8: Thinking agents (skipped when either model is set via environment)
     if os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
         selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
         selected_deep_thinker = DEFAULT_CONFIG["deep_think_llm"]
@@ -685,13 +713,13 @@ def get_user_selections():
     else:
         console.print(
             create_question_box(
-                "Step 7: Thinking Agents", "Select your thinking agents for analysis"
+                "Step 8: Thinking Agents", "Select your thinking agents for analysis"
             )
         )
         selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
         selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
 
-    # Step 8: Provider-specific reasoning/thinking configuration. Each knob is
+    # Step 9: Provider-specific reasoning/thinking configuration. Each knob is
     # settable via its TRADINGAGENTS_* env var; when that var is set (or the
     # provider itself came from env) the prompt is skipped and the configured
     # value is used — same env-precedence rule as the steps above. None = each
@@ -708,23 +736,24 @@ def get_user_selections():
     elif provider_lower == "google":
         thinking_level = thinking_value_or_prompt(
             "TRADINGAGENTS_GOOGLE_THINKING_LEVEL", "google_thinking_level",
-            "Gemini thinking mode", "Step 8: Thinking Mode",
+            "Gemini thinking mode", "Step 9: Thinking Mode",
             "Configure Gemini thinking mode", ask_gemini_thinking_config,
         )
     elif provider_lower == "openai":
         reasoning_effort = thinking_value_or_prompt(
             "TRADINGAGENTS_OPENAI_REASONING_EFFORT", "openai_reasoning_effort",
-            "Reasoning effort", "Step 8: Reasoning Effort",
+            "Reasoning effort", "Step 9: Reasoning Effort",
             "Configure OpenAI reasoning effort level", ask_openai_reasoning_effort,
         )
     elif provider_lower == "anthropic":
         anthropic_effort = thinking_value_or_prompt(
             "TRADINGAGENTS_ANTHROPIC_EFFORT", "anthropic_effort",
-            "Claude effort", "Step 8: Effort Level",
+            "Claude effort", "Step 9: Effort Level",
             "Configure Claude effort level", ask_anthropic_effort,
         )
 
     return {
+        "orchestration_mode": selected_orchestration_mode,
         "ticker": selected_ticker,
         "asset_type": asset_type.value,
         "analysis_date": analysis_date,
@@ -1003,10 +1032,12 @@ def _build_run_config(
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
     if checkpoint is not None:
         config["checkpoint_enabled"] = checkpoint
-    if orchestration_mode is not None:
-        if orchestration_mode not in {"static", "teacher", "learned"}:
-            raise ValueError("orchestration_mode must be static, teacher, or learned")
-        config["orchestration_mode"] = orchestration_mode
+    selected_orchestration_mode = orchestration_mode or selections.get(
+        "orchestration_mode", config["orchestration_mode"]
+    )
+    if selected_orchestration_mode not in {"static", "teacher", "learned"}:
+        raise ValueError("orchestration_mode must be static, teacher, or learned")
+    config["orchestration_mode"] = selected_orchestration_mode
     if scheduler_adapter_path is not None:
         config["scheduler_adapter_path"] = scheduler_adapter_path
     return config
@@ -1018,7 +1049,7 @@ def run_analysis(
     scheduler_adapter_path: str | None = None,
 ):
     # First get all user selections
-    selections = get_user_selections()
+    selections = get_user_selections(orchestration_mode=orchestration_mode)
 
     config = _build_run_config(
         selections,
