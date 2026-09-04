@@ -222,6 +222,20 @@ Validation：
 
 汇总器只读取`accepted.jsonl`，抽取20条Static、20条配对Teacher和60条Teacher-only，同时生成`comparisons.jsonl`。数量不足时直接报错，不会用失败数据补数。
 
+### 9.3 增量合并后续轨迹
+
+后续批次不直接拼接SFT JSONL，而是先与已审核的规范轨迹源合并：
+
+```bash
+.venv/bin/python -m training.scheduler.extend_sft_sources \
+  --base-dir data/scheduler/v1/sft100/sources \
+  --paired-root data/scheduler/v1/experiments/<batch>/paired \
+  --teacher-only-root data/scheduler/v1/experiments/<batch>/teacher-only \
+  --output-dir data/scheduler/v1/sft-extended/sources
+```
+
+该入口只合并`accepted`轨迹，拒绝与基础数据任务重叠，为完整Static/Teacher对生成新的配对记录，并把没有Static对应项但本身审核通过的Teacher归入`teacher_audited`。完成后重新运行`prepare_sft`执行全局去重和32K过滤。
+
 ## 10. 在AutoDL下载Qwen3-1.7B
 
 ```bash

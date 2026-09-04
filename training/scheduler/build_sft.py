@@ -99,10 +99,12 @@ def write_sft_dataset(
 ) -> dict[str, Any]:
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", encoding="utf-8") as handle:
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
         for example in examples:
             handle.write(json.dumps(example.to_dict(), ensure_ascii=False, sort_keys=True))
             handle.write("\n")
+    temporary.replace(destination)
     manifest = _manifest(
         examples,
         overflow_count=overflow_count,
