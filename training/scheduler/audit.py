@@ -9,7 +9,13 @@ from tradingagents.agents.utils.rating import parse_rating
 from tradingagents.scheduler.actions import SchedulerAction, node_for_action, parse_action
 from tradingagents.scheduler.trajectory import SchedulerTrajectory
 
-AUDITOR_VERSION = "scheduler-audit-v1"
+AUDITOR_VERSION = "scheduler-audit-v2"
+_REPORT_BY_ANALYST = {
+    "market": "market_report",
+    "social": "sentiment_report",
+    "news": "news_report",
+    "fundamentals": "fundamentals_report",
+}
 _TRADER_ACTION = re.compile(
     r"(?:\*{0,2}Action\*{0,2}|FINAL\s+TRANSACTION\s+PROPOSAL)\s*:\s*\*{0,2}"
     r"(BUY|HOLD|SELL)",
@@ -58,6 +64,7 @@ def audit_trajectory(trajectory: SchedulerTrajectory) -> AuditRecord:
         ),
         "nodes_match_actions": _nodes_match_actions(trajectory),
         "state_progress_valid": _state_progress_valid(trajectory),
+        "selected_analyst_reports_complete": _selected_reports_complete(trajectory),
         "completion_valid": _completion_valid(trajectory),
         "task_snapshot_match": bool(
             trajectory.task_id and trajectory.ticker and trajectory.trade_date
@@ -68,16 +75,6 @@ def audit_trajectory(trajectory: SchedulerTrajectory) -> AuditRecord:
         errors.append(f"execution_status:{trajectory.execution_status}")
     if any(step.error for step in trajectory.steps):
         errors.append("step_error")
-
-    reports = (
-        "market_report",
-        "sentiment_report",
-        "news_report",
-        "fundamentals_report",
-    )
-    final_state = trajectory.steps[-1].state_before if trajectory.steps else {}
-    if any(not str(final_state.get(field) or "").strip() for field in reports):
-        warnings.append("one_or_more_analyst_reports_empty")
 
     status = "rejected" if errors else ("warning" if warnings else "accepted")
     record = AuditRecord(
@@ -107,6 +104,20 @@ def _state_progress_valid(trajectory: SchedulerTrajectory) -> bool:
         or step.state_before != step.state_after
         for step in trajectory.steps
     )
+
+
+def _selected_reports_complete(trajectory: SchedulerTrajectory) -> bool:
+    selected = trajectory.provenance.get("selected_analysts")
+    if selected is None:
+        return True
+    if not isinstance(selected, (list, tuple)) or not selected:
+        return False
+    try:
+        report_fields = [_REPORT_BY_ANALYST[str(key)] for key in selected]
+    except KeyError:
+        return False
+    final_state = trajectory.steps[-1].state_before if trajectory.steps else {}
+    return all(str(final_state.get(field) or "").strip() for field in report_fields)
 
 
 def _completion_valid(trajectory: SchedulerTrajectory) -> bool:

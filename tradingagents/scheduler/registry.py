@@ -7,7 +7,7 @@ from typing import Literal
 
 from .actions import ANALYST_ACTION_BY_KEY, SchedulerAction
 
-AGENT_CATALOG_VERSION = "agent-catalog-v1"
+AGENT_CATALOG_VERSION = "agent-catalog-v2"
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class AgentSpec:
     writes: tuple[str, ...]
     prerequisites: tuple[str, ...]
     completion_signal: str
+    internal_tools: tuple[str, ...] = ()
     tool_policy_owner: Literal["expert_agent"] = "expert_agent"
 
     def to_prompt_dict(self) -> dict[str, object]:
@@ -38,6 +39,11 @@ _AGENT_SPECS = (
         ("market_report",),
         (),
         "market_report is non-empty",
+        internal_tools=(
+            "get_stock_data",
+            "get_indicators",
+            "get_verified_market_snapshot",
+        ),
     ),
     AgentSpec(
         "social",
@@ -48,6 +54,7 @@ _AGENT_SPECS = (
         ("sentiment_report",),
         (),
         "sentiment_report is non-empty",
+        internal_tools=("get_news",),
     ),
     AgentSpec(
         "news",
@@ -58,6 +65,13 @@ _AGENT_SPECS = (
         ("news_report",),
         (),
         "news_report is non-empty",
+        internal_tools=(
+            "get_news",
+            "get_global_news",
+            "get_insider_transactions",
+            "get_macro_indicators",
+            "get_prediction_markets",
+        ),
     ),
     AgentSpec(
         "fundamentals",
@@ -68,6 +82,12 @@ _AGENT_SPECS = (
         ("fundamentals_report",),
         (),
         "fundamentals_report is non-empty",
+        internal_tools=(
+            "get_fundamentals",
+            "get_balance_sheet",
+            "get_cashflow",
+            "get_income_statement",
+        ),
     ),
     AgentSpec(
         "bull",
@@ -76,7 +96,7 @@ _AGENT_SPECS = (
         "Build and defend the bullish investment case from available reports.",
         ("investment_debate_state",),
         ("investment_debate_state",),
-        ("at least one analyst report",),
+        ("all task-selected analyst reports are complete",),
         "investment_debate_state contains a Bull response",
     ),
     AgentSpec(
@@ -86,7 +106,7 @@ _AGENT_SPECS = (
         "Build and defend the bearish investment case from available reports.",
         ("investment_debate_state",),
         ("investment_debate_state",),
-        ("at least one analyst report",),
+        ("all task-selected analyst reports are complete",),
         "investment_debate_state contains a Bear response",
     ),
     AgentSpec(

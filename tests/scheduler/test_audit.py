@@ -30,7 +30,10 @@ def _trajectory() -> SchedulerTrajectory:
     trajectory.add_step(
         SchedulerStep(
             1,
-            {"final_trade_decision": "**Rating**: Hold"},
+            {
+                "news_report": "evidence",
+                "final_trade_decision": "**Rating**: Hold",
+            },
             "prompt-stop",
             ["<ACT_STOP>"],
             "<ACT_STOP>",
@@ -43,6 +46,7 @@ def _trajectory() -> SchedulerTrajectory:
         "trader_investment_plan": "**Action**: Hold\nFINAL TRANSACTION PROPOSAL: HOLD",
         "final_trade_decision": "**Rating**: Hold",
     }
+    trajectory.provenance = {"selected_analysts": ["news"]}
     trajectory.execution_status = "completed"
     return trajectory
 
@@ -57,9 +61,19 @@ def test_parses_original_structured_output_shapes() -> None:
 def test_audit_accepts_complete_legal_trajectory() -> None:
     trajectory = _trajectory()
     audit = audit_trajectory(trajectory)
-    assert audit.audit_status == "warning"
+    assert audit.audit_status == "accepted"
     assert not audit.errors
-    assert trajectory.audit_status == "warning"
+    assert trajectory.audit_status == "accepted"
+
+
+def test_audit_checks_only_task_selected_analyst_reports() -> None:
+    trajectory = _trajectory()
+    trajectory.provenance["selected_analysts"] = ["news", "fundamentals"]
+
+    audit = audit_trajectory(trajectory)
+
+    assert audit.audit_status == "rejected"
+    assert "selected_analyst_reports_complete" in audit.errors
 
 
 def test_audit_rejects_missing_stop_and_execution_failure() -> None:

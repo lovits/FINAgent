@@ -9,7 +9,7 @@ def test_scheduler_defaults_preserve_static_mode() -> None:
     assert DEFAULT_CONFIG["scheduler_max_steps"] == 16
     assert DEFAULT_CONFIG["scheduler_max_context_tokens"] == 32768
     assert DEFAULT_CONFIG["teacher_model"] == "z-ai/glm-5.3-flash"
-    assert DEFAULT_CONFIG["teacher_prompt_version"] == "teacher-scheduler-v3"
+    assert DEFAULT_CONFIG["teacher_prompt_version"] == "teacher-scheduler-v4"
     assert DEFAULT_CONFIG["scheduler_base_model"] == "Qwen/Qwen3-1.7B"
 
 

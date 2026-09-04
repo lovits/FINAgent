@@ -26,6 +26,20 @@ def test_prompt_dict_uses_string_action_token() -> None:
     spec = AGENT_REGISTRY[SchedulerAction.NEWS]
     assert spec.to_prompt_dict()["action"] == "<ACT_NEWS>"
     assert spec.to_prompt_dict()["tool_policy_owner"] == "expert_agent"
+    assert spec.to_prompt_dict()["internal_tools"] == (
+        "get_news",
+        "get_global_news",
+        "get_insider_transactions",
+        "get_macro_indicators",
+        "get_prediction_markets",
+    )
+
+
+def test_researchers_require_all_task_selected_reports() -> None:
+    for action in (SchedulerAction.BULL, SchedulerAction.BEAR):
+        assert AGENT_REGISTRY[action].prerequisites == (
+            "all task-selected analyst reports are complete",
+        )
 
 
 @pytest.mark.parametrize("selected", [(), ("unknown",), ("market", "market")])

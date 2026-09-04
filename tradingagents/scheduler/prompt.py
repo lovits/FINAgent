@@ -10,8 +10,8 @@ from .actions import SchedulerAction, parse_action
 from .contracts import SchedulerContext
 from .registry import AGENT_CATALOG_VERSION, registry_for_analysts
 
-PROMPT_VERSION = "scheduler-prompt-v3"
-TEACHER_PROMPT_VERSION = "teacher-scheduler-v3"
+PROMPT_VERSION = "scheduler-prompt-v4"
+TEACHER_PROMPT_VERSION = "teacher-scheduler-v4"
 STATE_SCHEMA_VERSION = "scheduler-state-v1"
 COMPLETION_CONTRACT_VERSION = "completion-v1"
 ORCHESTRATION_PROFILE_VERSION = "multi-analyst-shallow-v1"
@@ -58,7 +58,14 @@ def business_state(state: Mapping[str, Any]) -> dict[str, Any]:
     return {field: state.get(field) for field in _BUSINESS_STATE_FIELDS}
 
 
-def completion_contract(max_steps: int) -> dict[str, object]:
+def completion_contract(
+    max_steps: int, selected_analysts: tuple[str, ...]
+) -> dict[str, object]:
+    required_reports = [
+        spec.writes[0]
+        for spec in registry_for_analysts(selected_analysts)
+        if spec.key in selected_analysts
+    ]
     return {
         "max_steps": max_steps,
         "stop_requires": ["final_trade_decision"],
@@ -66,6 +73,31 @@ def completion_contract(max_steps: int) -> dict[str, object]:
         "trader_requires": ["investment_plan"],
         "risk_agents_require": ["trader_investment_plan"],
         "portfolio_manager_requires": ["risk_debate_state.history"],
+        "phase_dependencies": (
+            {"from": "analysis", "to": "research", "requires": required_reports},
+            {
+                "from": "research",
+                "to": "research_synthesis",
+                "requires": ["investment_debate_state.history"],
+            },
+            {
+                "from": "research_synthesis",
+                "to": "trading",
+                "requires": ["investment_plan"],
+            },
+            {
+                "from": "trading",
+                "to": "risk_review",
+                "requires": ["trader_investment_plan"],
+            },
+            {
+                "from": "risk_review",
+                "to": "portfolio_decision",
+                "requires": ["risk_debate_state.history"],
+            },
+        ),
+        "fixed_agent_order": False,
+        "future_route_output_forbidden": True,
         "one_action_per_decision": True,
         "tools_owned_by": "expert_agent",
     }
@@ -84,6 +116,7 @@ def orchestration_profile(
         "selected_analyst_count": len(selected_analysts),
         "selected_analysts_are_required": True,
         "research_style": "shallow",
+        "output_language": "Chinese",
         "routing_policy": "dynamic",
         "objective": _SHALLOW_DYNAMIC_OBJECTIVE,
     }
@@ -120,7 +153,7 @@ def build_scheduler_input(
         ),
         (
             f'COMPLETION_CONTRACT version="{COMPLETION_CONTRACT_VERSION}"',
-            _json(completion_contract(max_steps)),
+            _json(completion_contract(max_steps, selected_analysts)),
         ),
         (
             "TASK",

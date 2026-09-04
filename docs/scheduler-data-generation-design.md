@@ -182,6 +182,7 @@ ToolNode、消息清理节点和数据接口不属于Scheduler动作空间。
   "writes": ["news_report"],
   "prerequisites": [],
   "completion_signal": "news_report非空",
+  "internal_tools": ["get_news", "get_global_news", "get_insider_transactions", "get_macro_indicators", "get_prediction_markets"],
   "tool_policy_owner": "expert_agent"
 }
 ```
@@ -197,6 +198,7 @@ ToolNode、消息清理节点和数据接口不属于Scheduler动作空间。
 | `writes` | Agent执行后写入的字段 |
 | `prerequisites` | 调用前硬依赖 |
 | `completion_signal` | 判断Agent是否已经完成 |
+| `internal_tools` | 只用于说明Agent内部能力；Scheduler不得直接调用 |
 | `tool_policy_owner` | 固定为`expert_agent` |
 
 Scheduler不需要读取Expert Agent内部Prompt或Tool参数。
@@ -332,7 +334,7 @@ Action Mask只负责硬合法性，不负责规定完整顺序。
 基本规则：
 
 - 已完成的Analyst报告对应动作不再开放；
-- 至少存在一份Analyst报告后才能进入Bull/Bear；
+- 输入指定的全部Analyst报告完成后才能进入Bull/Bear；
 - Research Debate形成内容后才能调用Research Manager；
 - `investment_plan`存在后才能调用Trader；
 - `trader_investment_plan`存在后才能调用Risk Agents；
@@ -550,7 +552,7 @@ API Key不属于`provenance`。
   },
   "errors": ["selected_action_not_in_valid_actions"],
   "warnings": [],
-  "auditor_version": "scheduler-audit-v1"
+  "auditor_version": "scheduler-audit-v2"
 }
 ```
 

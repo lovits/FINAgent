@@ -45,6 +45,10 @@ class _Environment:
             "trader_investment_plan": "FINAL TRANSACTION PROPOSAL: HOLD",
             "final_trade_decision": "**Rating**: Hold",
         }
+        if "market" in task["selected_analysts"]:
+            final_state["market_report"] = "market evidence"
+        if "news" in task["selected_analysts"]:
+            final_state["news_report"] = "news evidence"
         trajectory.add_step(
             SchedulerStep(
                 1,

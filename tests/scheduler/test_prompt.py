@@ -51,8 +51,20 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
     assert "tool_policy_owner" in prompt
     assert 'ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1"' in prompt
     assert '"research_style": "shallow"' in prompt
+    assert '"output_language": "Chinese"' in prompt
     assert '"selected_analysts_are_required": true' in prompt
     assert "every analyst selected by the task input exactly once" in prompt
+    assert '"fixed_agent_order": false' in prompt
+    assert '"future_route_output_forbidden": true' in prompt
+    assert '"from": "analysis"' in prompt
+    assert (
+        '"requires": ["market_report", "sentiment_report", '
+        '"news_report", "fundamentals_report"]'
+    ) in prompt
+    assert (
+        '"internal_tools": ["get_stock_data", "get_indicators", '
+        '"get_verified_market_snapshot"]'
+    ) in prompt
 
 
 def test_scheduler_input_uses_one_profile_for_single_analyst_pool() -> None:

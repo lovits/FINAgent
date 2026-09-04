@@ -418,7 +418,7 @@ You select exactly one next Expert Agent action.
 <ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1">
 {input_selected_analysts_and_shallow_dynamic_routing_objective}
 
-<AGENT_CATALOG version="agent-catalog-v1">
+<AGENT_CATALOG version="agent-catalog-v2">
 {agent_catalog_json}
 
 <COMPLETION_CONTRACT version="completion-v1">
@@ -472,7 +472,7 @@ AGENT_CATALOG={agent_catalog_json}
 COMPLETION_CONTRACT={completion_rules_json}
 POSITIVE_EXAMPLES={few_shot_examples_json}
 CORRECTED_FAILURE_EXAMPLES={failure_examples_json}
-PROMPT_VERSION=teacher-scheduler-v3
+PROMPT_VERSION=teacher-scheduler-v4
 ```
 
 Few-shot只展示通用状态—动作关系，不包含当前任务的Static轨迹或答案。
@@ -849,7 +849,7 @@ scheduler_max_context_tokens: 32768
 
 teacher_provider: openrouter
 teacher_model: z-ai/glm-5.3-flash
-teacher_prompt_version: teacher-scheduler-v3
+teacher_prompt_version: teacher-scheduler-v4
 
 scheduler_base_model: Qwen/Qwen3-1.7B
 scheduler_base_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
