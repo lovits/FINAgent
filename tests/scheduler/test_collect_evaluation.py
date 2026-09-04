@@ -107,7 +107,7 @@ def test_collect_evaluation_writes_one_deterministic_trajectory_per_task(
             run_id="sft-validation",
             base_model="tiny",
             base_revision=None,
-            selected_analysts=("news",),
+            selected_analysts=("market", "news"),
         )
     )
 

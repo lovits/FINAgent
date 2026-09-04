@@ -284,8 +284,6 @@ class TradingAgentsSchedulerEnvironment:
             self.selected_analysts,
             step=step,
             max_steps=int(self.config.get("scheduler_max_steps", 16)),
-            max_debate_rounds=int(self.config.get("max_debate_rounds", 1)),
-            max_risk_rounds=int(self.config.get("max_risk_discuss_rounds", 1)),
         )
         if action not in mask.valid_actions:
             raise ValueError(f"static node {node_name} is invalid at scheduler step {step}")

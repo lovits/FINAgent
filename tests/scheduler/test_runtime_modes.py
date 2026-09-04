@@ -70,7 +70,7 @@ def test_teacher_mode_builds_default_openrouter_policy(monkeypatch, tmp_path) ->
         config=_config(tmp_path, "teacher"),
     )
     assert graph.scheduler_policy.policy_id.startswith(
-        "teacher:google/gemini-3.8-flash:"
+        "teacher:z-ai/glm-5.3-flash:"
     )
 
 

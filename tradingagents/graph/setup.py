@@ -217,8 +217,6 @@ class GraphSetup:
             scheduler_policy,
             selected,
             max_steps=scheduler_max_steps,
-            max_debate_rounds=self.conditional_logic.max_debate_rounds,
-            max_risk_rounds=self.conditional_logic.max_risk_discuss_rounds,
             on_decision=scheduler_on_decision,
         )
         workflow.add_node(SCHEDULER_NODE_NAME, scheduler_node)

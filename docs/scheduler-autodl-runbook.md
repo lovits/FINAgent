@@ -30,9 +30,9 @@ python -m venv .venv
 ```bash
 export OPENROUTER_API_KEY='你的OpenRouter Key'
 export TRADINGAGENTS_LLM_PROVIDER='openrouter'
-export TRADINGAGENTS_QUICK_THINK_LLM='google/gemini-3.8-flash'
-export TRADINGAGENTS_DEEP_THINK_LLM='google/gemini-3.8-flash'
-export TRADINGAGENTS_TEACHER_MODEL='google/gemini-3.8-flash'
+export TRADINGAGENTS_QUICK_THINK_LLM='z-ai/glm-5.3-flash'
+export TRADINGAGENTS_DEEP_THINK_LLM='z-ai/glm-5.3-flash'
+export TRADINGAGENTS_TEACHER_MODEL='z-ai/glm-5.3-flash'
 export TRADINGAGENTS_TEMPERATURE='0.0'
 ```
 
@@ -42,10 +42,10 @@ Key不写入配置、Prompt、日志、轨迹或Git。
 
 ```bash
 .venv/bin/python -m training.scheduler.provider_preflight \
-  --model google/gemini-3.8-flash
+  --model z-ai/glm-5.3-flash
 ```
 
-当前方案的数据生成与交互调试统一使用同步模型`google/gemini-3.8-flash`，不使用`:batch`模型。
+当前方案的数据生成、Expert执行与交互调试统一使用同步模型`z-ai/glm-5.3-flash`。
 
 ## 3. 准备股票列表
 

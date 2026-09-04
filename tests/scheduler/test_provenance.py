@@ -14,7 +14,7 @@ def _config(**overrides):
         "llm_provider": "openrouter",
         "quick_think_llm": "expert-quick",
         "deep_think_llm": "expert-deep",
-        "teacher_model": "google/gemini-3.8-flash",
+        "teacher_model": "z-ai/glm-5.3-flash",
         "scheduler_max_steps": 16,
         **overrides,
     }
@@ -94,10 +94,14 @@ def test_trajectory_provenance_records_versions_without_secrets() -> None:
         code={"git_commit": "abc123", "git_dirty": False},
     )
 
-    assert provenance["teacher_model"] == "google/gemini-3.8-flash"
+    assert provenance["teacher_model"] == "z-ai/glm-5.3-flash"
     assert provenance["task_dataset_version"] == "scheduler-tasks-v1"
     assert provenance["data_snapshot_id"] == "snapshot-1"
     assert provenance["action_schema_version"] == "scheduler-actions-v1"
+    assert provenance["scheduler_prompt_version"] == "scheduler-prompt-v2"
+    assert provenance["orchestration_profile_version"] == (
+        "multi-analyst-shallow-v1"
+    )
     assert len(provenance["expert_config_hash"]) == 64
     assert provenance["trajectory_schema_version"] == "scheduler-trajectory-v1"
     assert "must-not-leak" not in json.dumps(provenance)

@@ -14,6 +14,7 @@ from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
 
 from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
+from .profile import validate_shallow_runtime, validate_training_profile
 from .reward import RewardConfig
 from .rollout import GroupRolloutRunner, grpo_rows, write_grpo_rows
 from .runtime_config import scheduler_runtime_config
@@ -43,6 +44,9 @@ class RolloutConfig:
     limit: int | None = None
     seed: int = 42
 
+    def __post_init__(self) -> None:
+        validate_training_profile(self.selected_analysts)
+
     @classmethod
     def from_json(cls, path: str | Path) -> RolloutConfig:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -70,6 +74,7 @@ def collect(config: RolloutConfig) -> dict[str, int]:
             "scheduler_action_temperature": config.action_temperature,
         }
     )
+    validate_shallow_runtime(runtime_config)
     active, reference = load_shared_hf_scheduler_policies(
         runtime_config,
         active_adapter_path=config.active_adapter_path,

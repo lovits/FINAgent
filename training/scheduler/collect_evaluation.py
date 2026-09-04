@@ -18,6 +18,7 @@ from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
 from .manifest import summarize_trajectories
+from .profile import validate_shallow_runtime, validate_training_profile
 from .provenance import code_provenance, expert_config_hash, generation_config_hash
 from .runtime_config import scheduler_runtime_config
 
@@ -44,6 +45,9 @@ class EvaluationCollectionConfig:
     limit: int | None = None
     resume: bool = False
 
+    def __post_init__(self) -> None:
+        validate_training_profile(self.selected_analysts)
+
     @classmethod
     def from_json(cls, path: str | Path) -> EvaluationCollectionConfig:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -69,6 +73,7 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
             "temperature": 0.0,
         }
     )
+    validate_shallow_runtime(runtime_config)
     policy = load_hf_scheduler_policy(runtime_config)
     environment = TradingAgentsSchedulerEnvironment(
         runtime_config,

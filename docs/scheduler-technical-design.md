@@ -179,6 +179,8 @@ Scheduler轨迹存储与TradingMemoryLog分开：
 
 ## 4. 目标架构
 
+第一版动态策略只训练`multi-analyst-shallow-v1`。四个Analyst是候选集合而不是固定必经节点；不实现Single、Medium、Deep或多Profile条件化策略。
+
 ### 4.1 控制面与执行面
 
 ```text
@@ -203,7 +205,7 @@ Mode Resolver
 | 模式 | 图 | Policy | 使用场景 |
 |---|---|---|---|
 | `static` | 原始固定图 | 无Scheduler模型 | 正常基线、Static数据、回退 |
-| `teacher` | Scheduler动态图 | `TeacherSchedulerPolicy`，`google/gemini-3.8-flash` | Teacher数据和在线调试 |
+| `teacher` | Scheduler动态图 | `TeacherSchedulerPolicy`，`z-ai/glm-5.3-flash` | Teacher数据和在线调试 |
 | `learned` | Scheduler动态图 | `HFSchedulerPolicy` | SFT/GRPO后的本地编排 |
 
 ### 4.3 两张图
@@ -378,7 +380,8 @@ AgentState + selected_analysts + step + budget + history
 
 ### 7.2 运行约束
 
-- 达到`max_steps`后结束；
+- Shallow不设置Bull/Bear或Risk固定轮数；
+- 统一`max_steps=16`只作为异常防循环安全阀；
 - 同一动作执行后状态签名不变，增加`no_progress_count`；
 - 出现无进展时临时屏蔽立即重复动作；
 - 没有合法动作时产生明确失败，不随机选节点。
@@ -391,6 +394,7 @@ Mask不规定Market必须先于News，也不规定Bull一定先于Bear；合法�
 
 Scheduler读取：
 
+- `multi-analyst-shallow-v1`动态目标和可用Analyst候选集合；
 - `company_of_interest`、`asset_type`、`trade_date`；
 - `instrument_context`；
 - 四类完整Analyst报告；
@@ -410,6 +414,9 @@ Scheduler读取：
 ```text
 <SCHEDULER_ROLE>
 You select exactly one next Expert Agent action.
+
+<ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1">
+{available_analysts_and_minimum_sufficient_path_objective}
 
 <AGENT_CATALOG version="agent-catalog-v1">
 {agent_catalog_json}
@@ -465,7 +472,7 @@ AGENT_CATALOG={agent_catalog_json}
 COMPLETION_CONTRACT={completion_rules_json}
 POSITIVE_EXAMPLES={few_shot_examples_json}
 CORRECTED_FAILURE_EXAMPLES={failure_examples_json}
-PROMPT_VERSION=teacher-scheduler-v1
+PROMPT_VERSION=teacher-scheduler-v2
 ```
 
 Few-shot只展示通用状态—动作关系，不包含当前任务的Static轨迹或答案。
@@ -724,7 +731,7 @@ fallback
 | LLM抽象 | LangChain Core | 1.6.1 |
 | OpenAI/OpenRouter | langchain-openai | 1.6.0 |
 | Gemini | langchain-google-genai | 4.3.7 |
-| Teacher API | OpenRouter `google/gemini-3.8-flash` | 1,048,576 Token上下文，支持Structured Outputs；[模型页面](https://openrouter.ai/google/gemini-3.8-flash) |
+| Teacher API | OpenRouter `z-ai/glm-5.3-flash` | 1,310,720 Token上下文，支持Structured Outputs；[模型页面](https://openrouter.ai/z-ai/glm-5.3-flash) |
 | 数据处理 | pandas | 3.0.5 |
 | 市场数据 | yfinance、stockstats | yfinance 1.7.0 |
 | Checkpoint | langgraph-checkpoint-sqlite | SQLite |
@@ -838,8 +845,8 @@ scheduler_fallback_enabled: true
 scheduler_max_context_tokens: 32768
 
 teacher_provider: openrouter
-teacher_model: google/gemini-3.8-flash
-teacher_prompt_version: teacher-scheduler-v1
+teacher_model: z-ai/glm-5.3-flash
+teacher_prompt_version: teacher-scheduler-v2
 
 scheduler_base_model: Qwen/Qwen3-1.7B
 scheduler_base_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e

@@ -50,8 +50,6 @@ def compute_action_mask(
     *,
     step: int = 0,
     max_steps: int = 16,
-    max_debate_rounds: int = 1,
-    max_risk_rounds: int = 1,
     last_action: SchedulerAction | str | None = None,
     no_progress_count: int = 0,
 ) -> ActionMask:
@@ -59,8 +57,6 @@ def compute_action_mask(
 
     if step < 0 or max_steps <= 0:
         raise ValueError("invalid scheduler step budget")
-    if max_debate_rounds < 0 or max_risk_rounds < 0:
-        raise ValueError("debate and risk rounds cannot be negative")
     registry_for_analysts(selected_analysts)
 
     if _text(state.get("final_trade_decision")):
@@ -83,22 +79,20 @@ def compute_action_mask(
 
         debate = _mapping(state.get("investment_debate_state"))
         if _has_any_analyst_report(state):
-            if int(debate.get("count") or 0) < 2 * max_debate_rounds:
-                valid.extend((SchedulerAction.BULL, SchedulerAction.BEAR))
+            valid.extend((SchedulerAction.BULL, SchedulerAction.BEAR))
             if _text(debate.get("history")):
                 valid.append(SchedulerAction.RESEARCH_MANAGER)
     elif not _text(state.get("trader_investment_plan")):
         valid.append(SchedulerAction.TRADER)
     else:
         risk = _mapping(state.get("risk_debate_state"))
-        if int(risk.get("count") or 0) < 3 * max_risk_rounds:
-            valid.extend(
-                (
-                    SchedulerAction.AGGRESSIVE,
-                    SchedulerAction.CONSERVATIVE,
-                    SchedulerAction.NEUTRAL,
-                )
+        valid.extend(
+            (
+                SchedulerAction.AGGRESSIVE,
+                SchedulerAction.CONSERVATIVE,
+                SchedulerAction.NEUTRAL,
             )
+        )
         if _text(risk.get("history")):
             valid.append(SchedulerAction.PORTFOLIO_MANAGER)
 

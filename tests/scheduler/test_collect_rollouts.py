@@ -158,7 +158,7 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
             reward_config_path=None,
             base_model="tiny",
             base_revision=None,
-            selected_analysts=("news",),
+            selected_analysts=("market", "news"),
         )
     )
 

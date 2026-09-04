@@ -254,14 +254,17 @@ START
 
 Teacher模型只选择下一动作，不生成完整Agent调用计划。
 
-第一版Teacher固定为OpenRouter上的`google/gemini-3.8-flash`，使用其Structured Outputs能力约束单动作JSON；API Key只从`OPENROUTER_API_KEY`环境变量读取。
+第一版Teacher固定为OpenRouter上的`z-ai/glm-5.3-flash`，使用其Structured Outputs能力约束单动作JSON；API Key只从`OPENROUTER_API_KEY`环境变量读取。
+
+Teacher数据只生成`multi-analyst-shallow-v1`：四个Analyst全部进入候选集合，但Teacher可以只调用其中满足当前任务所需的子集，并自主决定Bull/Bear与Risk讨论长度。
 
 ### 8.2 Teacher输入
 
-每个决策点输入六部分：
+每个决策点输入七部分：
 
 ```text
 SCHEDULER_ROLE
+ORCHESTRATION_PROFILE
 AGENT_CATALOG
 COMPLETION_CONTRACT
 CURRENT_AGENT_STATE
@@ -326,7 +329,8 @@ Action Mask只负责硬合法性，不负责规定完整顺序。
 - `trader_investment_plan`存在后才能调用Risk Agents；
 - Risk Debate形成内容后才能调用Portfolio Manager；
 - `final_trade_decision`存在后只允许STOP；
-- 超过最大步数直接结束失败；
+- Bull/Bear和Risk不使用Shallow轮数硬截断，由策略按Prompt和成本自主决定；
+- 统一16步只作为异常防循环安全阀，超过后结束失败；
 - 无进展后禁止立即重复同一动作。
 
 Mask保证可执行性；Teacher和未来Learned模型学习在多个合法动作之间进行选择。
@@ -433,6 +437,7 @@ expert | tool | message_cleanup | scheduler
 | `deep_model` | Manager模型 |
 | `teacher_model` | Teacher路线使用的模型；Static为空 |
 | `teacher_prompt_version` | Teacher Prompt版本 |
+| `orchestration_profile_version` | 固定为`multi-analyst-shallow-v1` |
 | `agent_catalog_version` | Agent说明书版本 |
 | `action_schema_version` | 动作空间版本 |
 | `state_schema_version` | 状态序列化版本 |
@@ -453,6 +458,7 @@ API Key不属于`provenance`。
   "graph_config": {},
   "expert_models": {},
   "teacher_model": "...",
+  "orchestration_profile_version": "multi-analyst-shallow-v1",
   "schema_versions": {},
   "started_at": "...",
   "completed_at": "...",

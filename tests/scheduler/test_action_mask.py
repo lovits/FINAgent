@@ -40,6 +40,27 @@ def test_debate_unlocks_research_manager() -> None:
     assert SchedulerAction.RESEARCH_MANAGER in actions
 
 
+def test_shallow_intent_does_not_hard_code_debate_or_risk_turn_counts() -> None:
+    state = _state()
+    state["market_report"] = "market evidence"
+    state["investment_debate_state"] = {"history": "long debate", "count": 99}
+    debate_actions = compute_action_mask(state).valid_actions
+
+    assert SchedulerAction.BULL in debate_actions
+    assert SchedulerAction.BEAR in debate_actions
+    assert SchedulerAction.RESEARCH_MANAGER in debate_actions
+
+    state["investment_plan"] = "Hold with risk controls"
+    state["trader_investment_plan"] = "FINAL TRANSACTION PROPOSAL: HOLD"
+    state["risk_debate_state"] = {"history": "long risk debate", "count": 99}
+    risk_actions = compute_action_mask(state).valid_actions
+
+    assert SchedulerAction.AGGRESSIVE in risk_actions
+    assert SchedulerAction.CONSERVATIVE in risk_actions
+    assert SchedulerAction.NEUTRAL in risk_actions
+    assert SchedulerAction.PORTFOLIO_MANAGER in risk_actions
+
+
 def test_plan_trader_and_risk_dependencies() -> None:
     state = _state()
     state["investment_plan"] = "Hold with risk controls"

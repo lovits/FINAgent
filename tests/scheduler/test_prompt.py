@@ -49,6 +49,10 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
     assert "<ACT_SENTIMENT>" in prompt
     assert '"remaining_steps": 14' in prompt
     assert "tool_policy_owner" in prompt
+    assert 'ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1"' in prompt
+    assert '"research_style": "shallow"' in prompt
+    assert '"available_analysts_are_candidates": true' in prompt
+    assert "minimum sufficient subset" in prompt
 
 
 def test_teacher_schema_is_locked_to_valid_actions() -> None:

@@ -105,6 +105,9 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
     assert manifest["trajectories_per_task"] == 1
     assert manifest["task_count"] == 1
     assert manifest["schema_versions"]["actions"] == "scheduler-actions-v1"
+    assert manifest["orchestration_profile_version"] == (
+        "multi-analyst-shallow-v1"
+    )
     assert len(manifest["generation_config_hash"]) == 64
     assert "git_commit" in manifest
     assert manifest["dataset_counts"]["total"] == 1
@@ -135,7 +138,7 @@ def test_generation_requires_resume_for_existing_record(monkeypatch, tmp_path) -
         "mode": "static",
         "run_id": "run-1",
         "config": {},
-        "selected_analysts": ("market",),
+        "selected_analysts": ("market", "news"),
     }
     generate_trajectories(**arguments)
     with pytest.raises(FileExistsError, match="--resume"):

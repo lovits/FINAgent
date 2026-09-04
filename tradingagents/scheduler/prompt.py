@@ -10,10 +10,11 @@ from .actions import SchedulerAction, parse_action
 from .contracts import SchedulerContext
 from .registry import AGENT_CATALOG_VERSION, registry_for_analysts
 
-PROMPT_VERSION = "scheduler-prompt-v1"
-TEACHER_PROMPT_VERSION = "teacher-scheduler-v1"
+PROMPT_VERSION = "scheduler-prompt-v2"
+TEACHER_PROMPT_VERSION = "teacher-scheduler-v2"
 STATE_SCHEMA_VERSION = "scheduler-state-v1"
 COMPLETION_CONTRACT_VERSION = "completion-v1"
+ORCHESTRATION_PROFILE_VERSION = "multi-analyst-shallow-v1"
 
 _BUSINESS_STATE_FIELDS = (
     "company_of_interest",
@@ -38,6 +39,13 @@ The selected Expert Agent executes before you receive the next state.
 Choose only from VALID_ACTIONS. Do not call tools, write financial analysis,
 produce a trading decision, or output a future route. Choose STOP only when
 the completion contract is satisfied. Return one JSON object and no other text."""
+
+_SHALLOW_DYNAMIC_OBJECTIVE = (
+    "Dynamically choose the minimum sufficient subset of available Expert Agents. "
+    "Prefer a short, low-cost path, avoid redundant evidence and repeated debate, "
+    "and move to synthesis as soon as the current evidence can support a reliable "
+    "complete trading decision. Available analysts are candidates, not mandatory steps."
+)
 
 
 def _json(value: object) -> str:
@@ -67,6 +75,20 @@ def agent_catalog(selected_analysts: tuple[str, ...]) -> list[dict[str, object]]
     return [spec.to_prompt_dict() for spec in registry_for_analysts(selected_analysts)]
 
 
+def orchestration_profile(
+    selected_analysts: tuple[str, ...],
+) -> dict[str, object]:
+    return {
+        "profile_id": ORCHESTRATION_PROFILE_VERSION,
+        "analyst_mode": "multi" if len(selected_analysts) > 1 else "single",
+        "available_analysts": list(selected_analysts),
+        "research_style": "shallow",
+        "routing_policy": "dynamic",
+        "available_analysts_are_candidates": True,
+        "objective": _SHALLOW_DYNAMIC_OBJECTIVE,
+    }
+
+
 def build_scheduler_input(
     *,
     task_id: str,
@@ -88,6 +110,10 @@ def build_scheduler_input(
         raise ValueError("invalid scheduler prompt step budget")
     sections = (
         ("SCHEDULER_ROLE", _SYSTEM_PROMPT),
+        (
+            f'ORCHESTRATION_PROFILE version="{ORCHESTRATION_PROFILE_VERSION}"',
+            _json(orchestration_profile(selected_analysts)),
+        ),
         (
             f'AGENT_CATALOG version="{AGENT_CATALOG_VERSION}"',
             _json(agent_catalog(selected_analysts)),

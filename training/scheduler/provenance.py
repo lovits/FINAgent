@@ -11,6 +11,7 @@ from typing import Any
 
 from tradingagents.scheduler.actions import ACTION_SCHEMA_VERSION
 from tradingagents.scheduler.prompt import (
+    ORCHESTRATION_PROFILE_VERSION,
     PROMPT_VERSION,
     STATE_SCHEMA_VERSION,
     TEACHER_PROMPT_VERSION,
@@ -129,6 +130,7 @@ def trajectory_provenance(
         "action_schema_version": ACTION_SCHEMA_VERSION,
         "state_schema_version": STATE_SCHEMA_VERSION,
         "scheduler_prompt_version": PROMPT_VERSION,
+        "orchestration_profile_version": ORCHESTRATION_PROFILE_VERSION,
         "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
         "generation_config_hash": generation_config_hash(
             config,

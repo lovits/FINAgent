@@ -18,11 +18,13 @@
 
 ```text
 static  → 原始固定编排
-teacher → Gemini 3.8 Flash动态编排
+teacher → GLM 5.3 Flash动态编排
 learned → Qwen3-1.7B本地动态编排
 ```
 
 Teacher与Learned只选择下一位Expert Agent。Expert Agent内部继续使用原LLM、Prompt和Tool。
+
+第一版训练范围锁定为`multi-analyst-shallow-v1`：四个Analyst均可用但不是必选；Shallow只作为最小充分路径的Prompt目标，使用唯一一套Reward。不增加Single、Medium、Deep或模式化Reward。
 
 ## 2. 原代码的优化点
 
@@ -254,7 +256,7 @@ tradingagents/scheduler/teacher_policy.py
 
 实现：
 
-- OpenRouter `google/gemini-3.8-flash`；
+- OpenRouter `z-ai/glm-5.3-flash`；
 - Structured Output：`{"action":"<ACT_...>"}`；
 - 每个任务一条候选；
 - 同状态最多纠正一次；

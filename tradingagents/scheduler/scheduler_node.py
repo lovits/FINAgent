@@ -48,15 +48,11 @@ class SchedulerNode:
         selected_analysts: tuple[str, ...],
         *,
         max_steps: int = 16,
-        max_debate_rounds: int = 1,
-        max_risk_rounds: int = 1,
         on_decision: Callable[[SchedulerContext, PolicyDecision], None] | None = None,
     ):
         self.policy = policy
         self.selected_analysts = selected_analysts
         self.max_steps = max_steps
-        self.max_debate_rounds = max_debate_rounds
-        self.max_risk_rounds = max_risk_rounds
         self.on_decision = on_decision
 
     def __call__(self, state: Mapping[str, Any]) -> dict[str, Any]:
@@ -73,8 +69,6 @@ class SchedulerNode:
             self.selected_analysts,
             step=step,
             max_steps=self.max_steps,
-            max_debate_rounds=self.max_debate_rounds,
-            max_risk_rounds=self.max_risk_rounds,
             last_action=last_action,
             no_progress_count=no_progress,
         )

@@ -16,9 +16,12 @@
 
 训练一个本地中央Scheduler，根据当前TradingAgents状态选择下一位Expert Agent。
 
+第一版只训练一个固定画像：`multi-analyst-shallow-v1`。Market、Sentiment、News和Fundamentals四个Analyst都是可选候选，不是固定必经节点；不训练Single、Medium或Deep，也不使用模式化Reward。
+
 模型输入：
 
 ```text
+Multi-Analyst Shallow动态编排目标
 Agent Catalog
 + Completion Contract
 + 当前完整AgentState
@@ -61,6 +64,8 @@ GRPO再优化：
 - 相同任务下哪条完整调用轨迹更好；
 - 如何在保持最终输出质量的同时减少冗余调用；
 - 如何避免无进展循环、非法动作和过早STOP。
+
+Shallow不对应固定讨论轮数。它通过Prompt要求“使用最少但充分的Agent调用”，再由统一Reward中的Agent、Tool和Token成本惩罚强化；Bull/Bear和Risk实际调用次数由策略决定。
 
 这对应DeepSeek-R1“先建立可读、稳定的cold-start行为，再进入强化学习”的阶段思想，但本项目只训练Agent动作，不训练长思维链。[DeepSeek-R1](https://arxiv.org/abs/2501.12948)
 

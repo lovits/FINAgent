@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from tradingagents.scheduler.actions import ACTION_SCHEMA_VERSION
 from tradingagents.scheduler.prompt import (
+    ORCHESTRATION_PROFILE_VERSION,
     PROMPT_VERSION,
     STATE_SCHEMA_VERSION,
     TEACHER_PROMPT_VERSION,
@@ -30,6 +31,7 @@ from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
 from .manifest import summarize_trajectories
 from .memory_snapshot import build_memory_snapshot
+from .profile import validate_shallow_runtime, validate_training_profile
 from .provenance import code_provenance, expert_config_hash, generation_config_hash
 from .runtime_config import scheduler_runtime_config
 
@@ -68,6 +70,8 @@ def generate_trajectories(
 ) -> dict[str, int]:
     if mode not in {"static", "teacher"}:
         raise ValueError("data generation mode must be static or teacher")
+    selected_analysts = validate_training_profile(selected_analysts)
+    validate_shallow_runtime(config)
     started_at = datetime.now(UTC).isoformat()
     output = Path(output_dir)
     raw_store = TrajectoryStore(output / "raw.jsonl")
@@ -145,6 +149,7 @@ def generate_trajectories(
             "teacher_prompt_version": (
                 TEACHER_PROMPT_VERSION if policy is not None else None
             ),
+            "orchestration_profile_version": ORCHESTRATION_PROFILE_VERSION,
             "expert_models": {
                 "provider": config.get("llm_provider"),
                 "quick": config.get("quick_think_llm"),
@@ -180,7 +185,7 @@ def generate_trajectories(
 def _teacher_policy(config: dict[str, Any]) -> TeacherSchedulerPolicy:
     return TeacherSchedulerPolicy(
         OpenRouterTeacherGateway(
-            model=str(config.get("teacher_model", "google/gemini-3.8-flash")),
+            model=str(config.get("teacher_model", "z-ai/glm-5.3-flash")),
             base_url=str(config.get("teacher_base_url", "https://openrouter.ai/api/v1")),
             timeout_seconds=float(config.get("teacher_timeout_seconds", 90.0)),
             temperature=float(config.get("teacher_temperature", 0.2)),

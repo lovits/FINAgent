@@ -65,7 +65,7 @@ def run_preflight(model: str) -> dict[str, object]:
 def main() -> None:
     load_dotenv(dotenv_path=Path.cwd() / ".env")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="google/gemini-3.8-flash")
+    parser.add_argument("--model", default="z-ai/glm-5.3-flash")
     args = parser.parse_args()
     result = run_preflight(args.model)
     print(json.dumps(result, sort_keys=True))

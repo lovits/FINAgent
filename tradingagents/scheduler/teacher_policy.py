@@ -20,7 +20,7 @@ from .prompt import (
 from .teacher_context import load_teacher_examples
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_TEACHER_MODEL = "google/gemini-3.8-flash"
+DEFAULT_TEACHER_MODEL = "z-ai/glm-5.3-flash"
 
 
 class TeacherGatewayError(RuntimeError):

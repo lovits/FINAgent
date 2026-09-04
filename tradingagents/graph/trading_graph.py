@@ -203,7 +203,7 @@ class TradingAgentsGraph:
             if provider != "openrouter":
                 raise ValueError(f"unsupported teacher_provider: {provider!r}")
             gateway = OpenRouterTeacherGateway(
-                model=str(self.config.get("teacher_model", "google/gemini-3.8-flash")),
+                model=str(self.config.get("teacher_model", "z-ai/glm-5.3-flash")),
                 base_url=str(
                     self.config.get("teacher_base_url", "https://openrouter.ai/api/v1")
                 ),
