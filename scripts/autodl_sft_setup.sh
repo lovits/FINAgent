@@ -37,7 +37,7 @@ fi
 import json
 from pathlib import Path
 
-for split, expected in (("train", 1367), ("validation", 110)):
+for split, expected in (("train", 1683), ("validation", 110)):
     path = Path(f"data/scheduler/v1/sft/{split}.jsonl")
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
     if len(rows) != expected:
@@ -52,7 +52,7 @@ import transformers
 
 print(
     {
-        "train_samples": 1367,
+        "train_samples": 1683,
         "validation_samples": 110,
         "torch": torch.__version__,
         "transformers": transformers.__version__,

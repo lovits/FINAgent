@@ -26,6 +26,8 @@ def extend_sft_sources(
     base_comparisons: Iterable[PairComparison],
     extra_paired: Iterable[SchedulerTrajectory],
     extra_teacher_only: Iterable[SchedulerTrajectory],
+    *,
+    skip_existing: bool = False,
 ) -> tuple[
     list[SchedulerTrajectory],
     list[SchedulerTrajectory],
@@ -39,7 +41,12 @@ def extend_sft_sources(
     base = [*base_static, *base_paired_teacher, *base_audited_teacher]
     extra_paired = list(extra_paired)
     extra_teacher_only = list(extra_teacher_only)
-    _reject_task_overlap(base, [*extra_paired, *extra_teacher_only])
+    if skip_existing:
+        existing = _task_keys(base)
+        extra_paired = _without_tasks(extra_paired, existing)
+        extra_teacher_only = _without_tasks(extra_teacher_only, existing)
+    else:
+        _reject_task_overlap(base, [*extra_paired, *extra_teacher_only])
     extra_static = _by_key(extra_paired, "static")
     extra_teacher = _by_key(extra_paired, "teacher")
     common = sorted(set(extra_static) & set(extra_teacher))
@@ -78,6 +85,16 @@ def _by_key(
 
 def _task_keys(trajectories: Iterable[SchedulerTrajectory]) -> set[TrajectoryKey]:
     return {(trajectory.task_id, trajectory.data_snapshot_id) for trajectory in trajectories}
+
+
+def _without_tasks(
+    trajectories: Iterable[SchedulerTrajectory], blocked: set[TrajectoryKey]
+) -> list[SchedulerTrajectory]:
+    return [
+        trajectory
+        for trajectory in trajectories
+        if (trajectory.task_id, trajectory.data_snapshot_id) not in blocked
+    ]
 
 
 def _reject_task_overlap(
@@ -151,6 +168,7 @@ def main() -> None:
     parser.add_argument("--paired-root", action="append", required=True)
     parser.add_argument("--teacher-only-root", action="append", default=[])
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--skip-existing", action="store_true")
     args = parser.parse_args()
     base = Path(args.base_dir) if args.base_dir else None
     values = extend_sft_sources(
@@ -160,6 +178,7 @@ def main() -> None:
         load_comparisons(base / "comparisons.jsonl") if base else [],
         load_accepted_roots(args.paired_root),
         load_accepted_roots(args.teacher_only_root),
+        skip_existing=args.skip_existing,
     )
     manifest = write_extended_sources(args.output_dir, *values)
     print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))

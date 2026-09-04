@@ -72,3 +72,22 @@ def test_rejects_extension_task_overlap_with_base_bundle() -> None:
             [_trajectory("SAME", "teacher")],
             [],
         )
+
+
+def test_can_skip_tasks_already_present_in_base_bundle() -> None:
+    base = [_trajectory("SAME", "static")]
+
+    static, paired, audited, comparisons = extend_sft_sources(
+        base,
+        [],
+        [],
+        [],
+        [_trajectory("SAME", "teacher"), _trajectory("NEW", "static")],
+        [],
+        skip_existing=True,
+    )
+
+    assert [item.task_id for item in static] == ["SAME", "NEW"]
+    assert paired == []
+    assert audited == []
+    assert comparisons == []
