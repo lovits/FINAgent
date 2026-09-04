@@ -137,11 +137,17 @@ Qwen3词表较大，因此只训练13个新增Token对应的Embedding行。使�
 <SCHEDULER_ROLE>
 Choose exactly one next Expert Agent action.
 
-<AGENT_CATALOG>
-每个Agent的action、purpose、reads、writes、prerequisites、completion_signal
+<AGENT_INDEX>
+当前任务全部Agent的action、purpose和输出字段简表
+
+<CURRENT_VALID_AGENT_CARDS>
+仅当前合法Agent的reads、writes、prerequisites、completion_signal和内部工具摘要
 
 <COMPLETION_CONTRACT>
 完成条件、STOP条件、最大步数
+
+<ROUTING_FEATURES>
+指定报告完成情况、报告长度、Research/Trading/Risk进度
 
 <CURRENT_STATE>
 ticker、日期、四类报告、Research Debate、Investment Plan、Trader Plan、Risk Debate、Final Decision、past_context

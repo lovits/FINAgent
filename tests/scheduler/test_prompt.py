@@ -3,9 +3,12 @@ import json
 from tradingagents.scheduler.actions import SchedulerAction
 from tradingagents.scheduler.contracts import SchedulerContext
 from tradingagents.scheduler.prompt import (
+    agent_index,
     build_scheduler_input,
     build_teacher_correction,
     build_teacher_messages,
+    current_valid_agent_cards,
+    routing_features,
     teacher_response_schema,
 )
 
@@ -49,6 +52,9 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
     assert "<ACT_SENTIMENT>" in prompt
     assert '"remaining_steps": 14' in prompt
     assert "tool_policy_owner" in prompt
+    assert '<AGENT_INDEX version="agent-catalog-v2">' in prompt
+    assert '<CURRENT_VALID_AGENT_CARDS version="agent-catalog-v2">' in prompt
+    assert "<ROUTING_FEATURES>" in prompt
     assert 'ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1"' in prompt
     assert '"research_style": "shallow"' in prompt
     assert '"output_language": "Chinese"' in prompt
@@ -61,10 +67,37 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
         '"requires": ["market_report", "sentiment_report", '
         '"news_report", "fundamentals_report"]'
     ) in prompt
-    assert (
-        '"internal_tools": ["get_stock_data", "get_indicators", '
-        '"get_verified_market_snapshot"]'
-    ) in prompt
+    assert '"internal_tools": ["get_news"]' in prompt
+    assert "get_stock_data" not in prompt
+
+
+def test_agent_index_is_brief_and_only_valid_agents_get_detailed_cards() -> None:
+    selected = ("market", "social", "news", "fundamentals")
+    index = agent_index(selected)
+    cards = current_valid_agent_cards(
+        selected,
+        (SchedulerAction.SENTIMENT, SchedulerAction.BULL),
+    )
+
+    assert len(index) == 12
+    assert all("internal_tools" not in item for item in index)
+    assert {item["action"] for item in cards} == {"<ACT_SENTIMENT>", "<ACT_BULL>"}
+    assert all("completion_signal" in item for item in cards)
+
+
+def test_routing_features_summarize_reports_and_progress() -> None:
+    features = routing_features(
+        _state(),
+        ("market", "social", "news", "fundamentals"),
+    )
+
+    reports = features["reports"]
+    assert reports["completed"] == ["market_report", "news_report"]
+    assert reports["missing"] == ["sentiment_report", "fundamentals_report"]
+    assert reports["character_counts"]["market_report"] == 2000
+    assert features["research"]["investment_plan_ready"] is False
+    assert features["risk"]["speakers"] == []
+    assert features["final_decision_ready"] is False
 
 
 def test_scheduler_input_uses_one_profile_for_single_analyst_pool() -> None:

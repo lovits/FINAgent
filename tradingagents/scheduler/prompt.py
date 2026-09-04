@@ -10,8 +10,8 @@ from .actions import SchedulerAction, parse_action
 from .contracts import SchedulerContext
 from .registry import AGENT_CATALOG_VERSION, registry_for_analysts
 
-PROMPT_VERSION = "scheduler-prompt-v4"
-TEACHER_PROMPT_VERSION = "teacher-scheduler-v4"
+PROMPT_VERSION = "scheduler-prompt-v5"
+TEACHER_PROMPT_VERSION = "teacher-scheduler-v5"
 STATE_SCHEMA_VERSION = "scheduler-state-v1"
 COMPLETION_CONTRACT_VERSION = "completion-v1"
 ORCHESTRATION_PROFILE_VERSION = "multi-analyst-shallow-v1"
@@ -32,6 +32,13 @@ _BUSINESS_STATE_FIELDS = (
     "risk_debate_state",
     "final_trade_decision",
 )
+
+_REPORT_BY_ANALYST = {
+    "market": "market_report",
+    "social": "sentiment_report",
+    "news": "news_report",
+    "fundamentals": "fundamentals_report",
+}
 
 _SYSTEM_PROMPT = """You are the central Agent Scheduler for TradingAgents.
 Your only job is to choose exactly one next Expert Agent action.
@@ -103,8 +110,81 @@ def completion_contract(
     }
 
 
-def agent_catalog(selected_analysts: tuple[str, ...]) -> list[dict[str, object]]:
-    return [spec.to_prompt_dict() for spec in registry_for_analysts(selected_analysts)]
+def agent_index(selected_analysts: tuple[str, ...]) -> list[dict[str, object]]:
+    return [
+        {
+            "action": spec.action.value,
+            "node_name": spec.node_name,
+            "purpose": spec.purpose,
+            "writes": spec.writes,
+        }
+        for spec in registry_for_analysts(selected_analysts)
+    ]
+
+
+def current_valid_agent_cards(
+    selected_analysts: tuple[str, ...],
+    valid_actions: Sequence[SchedulerAction],
+) -> list[dict[str, object]]:
+    valid = set(valid_actions)
+    return [
+        spec.to_prompt_dict()
+        for spec in registry_for_analysts(selected_analysts)
+        if spec.action in valid
+    ]
+
+
+def routing_features(
+    state: Mapping[str, Any], selected_analysts: tuple[str, ...]
+) -> dict[str, object]:
+    required_reports = [_REPORT_BY_ANALYST[key] for key in selected_analysts]
+    completed_reports = [
+        field for field in required_reports if bool(str(state.get(field) or "").strip())
+    ]
+    debate = state.get("investment_debate_state") or {}
+    risk = state.get("risk_debate_state") or {}
+    return {
+        "reports": {
+            "required": required_reports,
+            "completed": completed_reports,
+            "missing": [
+                field for field in required_reports if field not in completed_reports
+            ],
+            "character_counts": {
+                field: len(str(state.get(field) or "")) for field in required_reports
+            },
+        },
+        "research": {
+            "turn_count": int(debate.get("count") or 0),
+            "has_history": bool(str(debate.get("history") or "").strip()),
+            "has_bull_view": bool(str(debate.get("bull_history") or "").strip()),
+            "has_bear_view": bool(str(debate.get("bear_history") or "").strip()),
+            "investment_plan_ready": bool(
+                str(state.get("investment_plan") or "").strip()
+            ),
+        },
+        "trading": {
+            "trader_plan_ready": bool(
+                str(state.get("trader_investment_plan") or "").strip()
+            )
+        },
+        "risk": {
+            "turn_count": int(risk.get("count") or 0),
+            "has_history": bool(str(risk.get("history") or "").strip()),
+            "speakers": [
+                name
+                for name, field in (
+                    ("aggressive", "aggressive_history"),
+                    ("conservative", "conservative_history"),
+                    ("neutral", "neutral_history"),
+                )
+                if bool(str(risk.get(field) or "").strip())
+            ],
+        },
+        "final_decision_ready": bool(
+            str(state.get("final_trade_decision") or "").strip()
+        ),
+    }
 
 
 def orchestration_profile(
@@ -148,8 +228,12 @@ def build_scheduler_input(
             _json(orchestration_profile(selected_analysts)),
         ),
         (
-            f'AGENT_CATALOG version="{AGENT_CATALOG_VERSION}"',
-            _json(agent_catalog(selected_analysts)),
+            f'AGENT_INDEX version="{AGENT_CATALOG_VERSION}"',
+            _json(agent_index(selected_analysts)),
+        ),
+        (
+            f'CURRENT_VALID_AGENT_CARDS version="{AGENT_CATALOG_VERSION}"',
+            _json(current_valid_agent_cards(selected_analysts, parsed_valid)),
         ),
         (
             f'COMPLETION_CONTRACT version="{COMPLETION_CONTRACT_VERSION}"',
@@ -165,6 +249,10 @@ def build_scheduler_input(
                     "asset_type": state.get("asset_type"),
                 }
             ),
+        ),
+        (
+            "ROUTING_FEATURES",
+            _json(routing_features(state, selected_analysts)),
         ),
         (
             f'CURRENT_STATE version="{STATE_SCHEMA_VERSION}"',
