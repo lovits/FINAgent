@@ -202,7 +202,7 @@ data/scheduler/v1/sft/manifest.json
 
 采样比例由分层Sampler实现，不复制JSONL样本。`teacher_verified`和`teacher_audited`共同组成Teacher的80%采样池；每次先选择Static或Teacher来源，再选择task/trajectory，最后选择其中的SchedulerStep，防止步骤更多的长轨迹天然获得更高训练权重。
 
-`teacher_verified`来自有Static对照且配对通过的任务；`teacher_audited`只用于明确标记的Teacher-only任务，必须通过结构与完成审核，并且不能与配对任务重叠。GRPO仍只使用有Static参考的任务。
+`teacher_verified`来自有Static对照且配对通过的任务；`teacher_audited`包含结构审核通过的Teacher-only轨迹，以及完成合法编排但与Static最终交易结论不一致的配对Teacher轨迹。Static不作为Teacher正确性的硬标签，配对结果保留作A/B指标。外部Teacher-only任务仍不得与配对输入集重叠。GRPO仍只使用有Static参考的任务。
 
 Teacher数据不足时使用实际合格数量，不重复少量样本凑比例。
 

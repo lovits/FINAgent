@@ -291,7 +291,13 @@ Validation：
 
 ## 13. 准备AutoDL训练配置
 
-复制仓库配置，并把`base_model`改为AutoDL本地路径、`base_revision`改为`null`：
+直接使用已准备的AutoDL配置：
+
+```text
+configs/scheduler/sft-qwen3-1p7b-autodl.json
+```
+
+该配置固定使用`/root/autodl-tmp/models/Qwen3-1.7B`，且`base_revision/tokenizer_revision`为`null`，避免对本地模型路径再解析Hugging Face修订号。
 
 ```text
 configs/scheduler/sft-qwen3-1p7b.json

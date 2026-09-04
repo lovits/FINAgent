@@ -52,3 +52,15 @@ def test_writes_plan_manifest_with_trajectory_count(tmp_path) -> None:
     assert manifest["planned_trajectory_count"] == 7
     assert manifest["role_counts"] == {"paired": 2, "teacher_only": 3}
     assert (tmp_path / "tasks.manifest.json").exists()
+
+
+def test_preserves_validation_split_when_requested() -> None:
+    selected = build_collection_tasks(
+        [_task(index, "validation") for index in range(2)],
+        paired_count=2,
+        teacher_only_count=0,
+        source_split="validation",
+        target_split="validation",
+    )
+
+    assert {task["split"] for task in selected} == {"validation"}

@@ -620,14 +620,15 @@ Teacher与Static路径完全相同仍是有效轨迹，但重复的状态—动�
 ### 13.2 转换规则
 
 - Static只转换`accepted`轨迹；
-- 配对Teacher只转换`teacher_verified`轨迹；
-- 明确位于Teacher-only输入集且结构审核通过的轨迹转换为`teacher_audited`；
-- `teacher_audited`任务不得与任何配对Teacher任务重叠；
+- 配对通过的Teacher标记为`teacher_verified`；配对结果不一致但结构审核通过的Teacher标记为`teacher_audited`，配对结果仅保留作A/B证据；
+- 明确位于Teacher-only输入集且结构审核通过的轨迹同样转换为`teacher_audited`；
+- 外部Teacher-only输入集不得与配对Teacher任务重叠，防止同一轨迹被重复读入；
 - 每个合法SchedulerStep转换为一条样本；
 - Teacher纠正成功只保留第二次合法动作；
 - 超过32,768 Token的样本标记`context_overflow`并拒绝；
 - Train与Validation按`task_id`隔离后再拆样本；
 - 相同`input_text + target_action`去重；
+- 完全相同的`input_text`如出现Static/Teacher动作冲突，保留Teacher动作；同等信任等级的Teacher冲突直接报错；
 - 每条样本保留到原始轨迹的引用。
 
 ### 13.3 SFT Manifest

@@ -18,6 +18,12 @@ from .build_sft import (
 from .model import scheduler_input_ids
 from .pair_dataset import load_comparisons
 
+SOURCE_PRIORITY = {
+    "static": 0,
+    "teacher_audited": 1,
+    "teacher_verified": 2,
+}
+
 
 def prepare_sft_dataset(
     static: Iterable[SchedulerTrajectory],
@@ -58,8 +64,13 @@ def prepare_sft_dataset(
         max_tokens=max_tokens,
         verified_teacher_ids=verified_ids,
     )
+    unverified_teacher = [
+        trajectory
+        for trajectory in teacher
+        if trajectory.trajectory_id not in verified_ids
+    ]
     audited_examples, audited_overflow = build_sft_examples(
-        teacher_audited,
+        [*unverified_teacher, *teacher_audited],
         source="teacher_audited",
         token_counter=token_counter,
         max_tokens=max_tokens,
@@ -90,17 +101,21 @@ def source_task_split(
 
 
 def _deduplicate(examples: Iterable[SFTExample]) -> list[SFTExample]:
-    values = []
-    target_by_input: dict[str, str] = {}
+    values: dict[str, SFTExample] = {}
     for example in examples:
-        existing = target_by_input.get(example.input_text)
-        if existing is not None and existing != example.target_action:
-            raise ValueError("conflicting actions for the same scheduler input")
-        if existing is not None:
+        existing = values.get(example.input_text)
+        if existing is None:
+            values[example.input_text] = example
             continue
-        target_by_input[example.input_text] = example.target_action
-        values.append(example)
-    return values
+        existing_priority = SOURCE_PRIORITY[existing.source]
+        candidate_priority = SOURCE_PRIORITY[example.source]
+        if existing.target_action != example.target_action and (
+            existing_priority == candidate_priority
+        ):
+            raise ValueError("conflicting actions from equally trusted sources")
+        if candidate_priority > existing_priority:
+            values[example.input_text] = example
+    return list(values.values())
 
 
 def qwen_token_counter(model_id: str, revision: str | None = None) -> Callable[[str], int]:

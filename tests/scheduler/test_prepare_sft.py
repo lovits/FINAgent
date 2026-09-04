@@ -40,7 +40,7 @@ def test_combines_sources_and_deduplicates_identical_transition() -> None:
         token_counter=len,
     )
     assert len(examples) == 1
-    assert examples[0].source == "static"
+    assert examples[0].source == "teacher_verified"
     assert overflow == 0
 
 
@@ -70,7 +70,7 @@ def test_includes_audited_teacher_only_tasks_as_separate_source() -> None:
     )
 
     assert {example.source for example in examples} == {
-        "static",
+        "teacher_verified",
         "teacher_audited",
     }
     assert overflow == 0
@@ -87,18 +87,57 @@ def test_rejects_teacher_only_source_that_overlaps_paired_task() -> None:
         )
 
 
-def test_rejects_conflicting_labels_for_identical_input() -> None:
+def test_prefers_teacher_label_for_static_teacher_conflict() -> None:
     static = _trajectory("static-1", "static")
     teacher = _trajectory("teacher-1", "teacher")
     teacher.steps[0].selected_action = "<ACT_MARKET>"
     teacher.steps[0].valid_actions.append("<ACT_MARKET>")
     teacher.steps[0].agent_node = "Market Analyst"
 
-    with pytest.raises(ValueError, match="conflicting actions"):
+    examples, _ = prepare_sft_dataset(
+        [static],
+        [teacher],
+        verified_ids={"teacher-1"},
+        token_counter=len,
+    )
+
+    assert len(examples) == 1
+    assert examples[0].source == "teacher_verified"
+    assert examples[0].target_action == "<ACT_MARKET>"
+
+
+def test_includes_unverified_paired_teacher_as_audited() -> None:
+    teacher = _trajectory("teacher-1", "teacher")
+    teacher.steps[0].serialized_state = "dynamic teacher prompt"
+
+    examples, _ = prepare_sft_dataset(
+        [_trajectory("static-1", "static")],
+        [teacher],
+        verified_ids=set(),
+        token_counter=len,
+    )
+
+    assert {example.source for example in examples} == {
+        "static",
+        "teacher_audited",
+    }
+
+
+def test_rejects_conflicting_labels_from_equal_teacher_sources() -> None:
+    first = _trajectory("teacher-audited-1", "teacher")
+    first.task_id = "task-2"
+    second = _trajectory("teacher-audited-2", "teacher")
+    second.task_id = "task-3"
+    second.steps[0].selected_action = "<ACT_MARKET>"
+    second.steps[0].valid_actions.append("<ACT_MARKET>")
+    second.steps[0].agent_node = "Market Analyst"
+
+    with pytest.raises(ValueError, match="equally trusted"):
         prepare_sft_dataset(
-            [static],
-            [teacher],
-            verified_ids={"teacher-1"},
+            [_trajectory("static-1", "static")],
+            [],
+            [first, second],
+            verified_ids=set(),
             token_counter=len,
         )
 

@@ -87,13 +87,15 @@ def _terminal_result(job: BatchJob) -> dict[str, Any] | None:
     return None
 
 
-def run_job(job: BatchJob, *, repo: Path, tasks_path: Path) -> dict[str, Any]:
+def run_job(
+    job: BatchJob, *, repo: Path, tasks_path: Path, task_split: str = "train"
+) -> dict[str, Any]:
     existing = _terminal_result(job)
     if existing is not None:
         return existing
     output = Path(job.output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    command = _generation_command(job, tasks_path)
+    command = _generation_command(job, tasks_path, task_split)
     with (output / "job.log").open("a", encoding="utf-8") as log:
         result = subprocess.run(
             command,
@@ -109,7 +111,9 @@ def run_job(job: BatchJob, *, repo: Path, tasks_path: Path) -> dict[str, Any]:
     return {**asdict(job), "status": "failed", "returncode": result.returncode}
 
 
-def _generation_command(job: BatchJob, tasks_path: Path) -> list[str]:
+def _generation_command(
+    job: BatchJob, tasks_path: Path, task_split: str
+) -> list[str]:
     return [
         sys.executable,
         "-m",
@@ -118,6 +122,8 @@ def _generation_command(job: BatchJob, tasks_path: Path) -> list[str]:
         str(tasks_path),
         "--task-id",
         job.task_id,
+        "--split",
+        task_split,
         "--mode",
         job.mode,
         "--run-id",
@@ -136,6 +142,7 @@ def run_batch(
     tasks_path: Path,
     output_root: Path,
     max_workers: int,
+    task_split: str = "train",
 ) -> dict[str, Any]:
     if max_workers < 1:
         raise ValueError("max_workers must be positive")
@@ -143,7 +150,14 @@ def run_batch(
     _write_batch_manifest(output_root, jobs, results, status="running")
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(run_job, job, repo=repo, tasks_path=tasks_path): job for job in jobs
+            executor.submit(
+                run_job,
+                job,
+                repo=repo,
+                tasks_path=tasks_path,
+                task_split=task_split,
+            ): job
+            for job in jobs
         }
         for future in as_completed(futures):
             job = futures[future]
@@ -190,6 +204,7 @@ def main() -> None:
     parser.add_argument("--run-prefix", required=True)
     parser.add_argument("--max-workers", type=int, default=8)
     parser.add_argument("--repo", default=".")
+    parser.add_argument("--split", default="train")
     parser.add_argument("--only-unstarted", action="store_true")
     parser.add_argument("--manifest-dir")
     args = parser.parse_args()
@@ -197,7 +212,7 @@ def main() -> None:
     tasks_path = Path(args.tasks).resolve()
     output_root = Path(args.output_dir).resolve()
     jobs = build_jobs(
-        load_tasks(tasks_path, split="train"),
+        load_tasks(tasks_path, split=args.split),
         output_root=output_root,
         run_prefix=args.run_prefix,
     )
@@ -212,6 +227,7 @@ def main() -> None:
         tasks_path=tasks_path,
         output_root=manifest_root,
         max_workers=args.max_workers,
+        task_split=args.split,
     )
     print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
 

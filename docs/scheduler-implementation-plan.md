@@ -276,7 +276,7 @@ tradingagents/scheduler/teacher_policy.py
 - 分别执行结构审核与完成审核；
 - 按`task_id + data_snapshot_id`配对；
 - 比较Trader动作、Portfolio评级和成本；
-- 把`static accepted`、`teacher_verified`以及明确隔离的`teacher_audited`转换为SFT数据；GRPO仍只使用有Static参考的任务。
+- 把`static accepted`、配对通过的`teacher_verified`以及结构审核通过的`teacher_audited`转换为SFT数据；配对不一致作为A/B指标而非Teacher轨迹硬删除条件；GRPO仍只使用有Static参考的任务。
 
 ### 测试
 

@@ -39,6 +39,7 @@ def build_collection_tasks(
     paired_count: int,
     teacher_only_count: int,
     source_split: str = "reserve",
+    target_split: str = "train",
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     if min(paired_count, teacher_only_count, offset) < 0:
@@ -51,7 +52,7 @@ def build_collection_tasks(
     values = []
     for index, task in enumerate(selected):
         task["source_split"] = task["split"]
-        task["split"] = "train"
+        task["split"] = target_split
         task["collection_role"] = "paired" if index < paired_count else "teacher_only"
         values.append(task)
     return values
@@ -88,6 +89,7 @@ def main() -> None:
     parser.add_argument("--paired-count", type=int, required=True)
     parser.add_argument("--teacher-only-count", type=int, required=True)
     parser.add_argument("--source-split", default="reserve")
+    parser.add_argument("--target-split", default="train")
     parser.add_argument("--offset", type=int, default=0)
     args = parser.parse_args()
     tasks = build_collection_tasks(
@@ -95,6 +97,7 @@ def main() -> None:
         paired_count=args.paired_count,
         teacher_only_count=args.teacher_only_count,
         source_split=args.source_split,
+        target_split=args.target_split,
         offset=args.offset,
     )
     manifest = write_collection_tasks(tasks, args.output)
