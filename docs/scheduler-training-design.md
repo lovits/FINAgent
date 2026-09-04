@@ -16,12 +16,15 @@
 
 训练一个本地中央Scheduler，根据当前TradingAgents状态选择下一位Expert Agent。
 
-第一版只训练一个固定画像：`multi-analyst-shallow-v1`。Market、Sentiment、News和Fundamentals四个Analyst都是可选候选，不是固定必经节点；不训练Single、Medium或Deep，也不使用模式化Reward。
+第一版只训练一个固定画像：`multi-analyst-shallow-v1`。这里的“Multi-Analyst”广义覆盖1～4个Analyst：每条任务输入直接指定本次必须使用的Analyst集合，Scheduler不选择或缩减该集合，只学习集合内的执行顺序和后续Agent编排。Single与Multi不是两种训练模式，也不拆分Reward；第一版不训练Medium或Deep。
+
+TaskSeed同时固定股票、日期、中文输出、`shallow`研究强度和1～4个输入指定Analyst。模型不学习预测这些输入，只在其约束下学习下一Agent动作。
 
 模型输入：
 
 ```text
-Multi-Analyst Shallow动态编排目标
+Shallow动态编排目标
++ 输入指定的Analyst集合（1～4个，均需完成）
 Agent Catalog
 + Completion Contract
 + 当前完整AgentState

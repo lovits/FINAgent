@@ -50,6 +50,9 @@ def pair_trajectories(
     for field in (
         "task_dataset_version",
         "information_cutoff",
+        "selected_analysts",
+        "research_depth",
+        "output_language",
         "expert_config_hash",
         "scheduler_max_steps",
     ):

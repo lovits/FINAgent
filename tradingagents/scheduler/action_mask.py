@@ -78,7 +78,7 @@ def compute_action_mask(
                 valid.append(action)
 
         debate = _mapping(state.get("investment_debate_state"))
-        if _has_any_analyst_report(state):
+        if not valid and _has_any_analyst_report(state):
             valid.extend((SchedulerAction.BULL, SchedulerAction.BEAR))
             if _text(debate.get("history")):
                 valid.append(SchedulerAction.RESEARCH_MANAGER)

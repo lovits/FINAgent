@@ -117,6 +117,11 @@ def _static_reference() -> SchedulerTrajectory:
         "trader_investment_plan": "FINAL TRANSACTION PROPOSAL: HOLD",
         "final_trade_decision": "**Rating**: Strong Buy",
     }
+    trajectory.provenance = {
+        "selected_analysts": ["market", "news"],
+        "research_depth": "shallow",
+        "output_language": "Chinese",
+    }
     return trajectory
 
 
@@ -132,6 +137,9 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
                 "trade_date": "2026-01-05",
                 "data_snapshot_id": "snapshot-1",
                 "split": "train",
+                "selected_analysts": ["market", "news"],
+                "research_depth": "shallow",
+                "output_language": "Chinese",
             }
         )
         + "\n"
@@ -158,7 +166,6 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
             reward_config_path=None,
             base_model="tiny",
             base_revision=None,
-            selected_analysts=("market", "news"),
         )
     )
 

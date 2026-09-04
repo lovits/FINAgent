@@ -11,9 +11,11 @@ from training.scheduler.environment import EnvironmentRunResult
 
 class _Environment:
     runtime_config = None
+    selected_analysts = None
 
     def __init__(self, config, **kwargs):
         type(self).runtime_config = config
+        type(self).selected_analysts = kwargs["selected_analysts"]
 
     def run(self, task, *, mode, run_id, policy, trajectory_id, **kwargs):
         trajectory = SchedulerTrajectory(
@@ -55,17 +57,29 @@ class _Environment:
             )
         )
         trajectory.final_outputs = dict(final_state)
+        trajectory.provenance = {
+            "selected_analysts": task["selected_analysts"],
+            "research_depth": task["research_depth"],
+            "output_language": task["output_language"],
+            "expert_config_hash": "+".join(task["selected_analysts"]),
+            "generation_config_hash": "generation-config",
+        }
         trajectory.execution_status = "completed"
         return EnvironmentRunResult(trajectory, final_state)
 
 
-def _task(task_id: str, ticker: str, snapshot: str) -> dict:
+def _task(
+    task_id: str, ticker: str, snapshot: str, selected_analysts: list[str]
+) -> dict:
     return {
         "task_id": task_id,
         "ticker": ticker,
         "trade_date": "2026-01-05",
         "data_snapshot_id": snapshot,
         "split": "validation",
+        "selected_analysts": selected_analysts,
+        "research_depth": "shallow",
+        "output_language": "Chinese",
     }
 
 
@@ -77,8 +91,8 @@ def test_collect_evaluation_writes_one_deterministic_trajectory_per_task(
         "\n".join(
             json.dumps(task)
             for task in (
-                _task("task-1", "AAPL", "snapshot-1"),
-                _task("task-2", "MSFT", "snapshot-2"),
+                _task("task-1", "AAPL", "snapshot-1", ["market"]),
+                _task("task-2", "MSFT", "snapshot-2", ["market", "news"]),
             )
         )
         + "\n"
@@ -107,7 +121,6 @@ def test_collect_evaluation_writes_one_deterministic_trajectory_per_task(
             run_id="sft-validation",
             base_model="tiny",
             base_revision=None,
-            selected_analysts=("market", "news"),
         )
     )
 
@@ -132,5 +145,11 @@ def test_collect_evaluation_writes_one_deterministic_trajectory_per_task(
     assert manifest["expert_temperature"] == 0.0
     assert manifest["dataset_counts"]["total"] == 2
     assert manifest["dataset_counts"]["completed"] == 2
+    assert manifest["task_inputs"]["analyst_sets"] == [
+        ["market"],
+        ["market", "news"],
+    ]
     assert loaded_configs[0]["scheduler_adapter_path"] == "adapter/sft"
     assert _Environment.runtime_config["orchestration_mode"] == "learned"
+    assert _Environment.runtime_config["output_language"] == "Chinese"
+    assert _Environment.selected_analysts == ("market", "news")

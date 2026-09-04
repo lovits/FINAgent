@@ -121,6 +121,8 @@ def trajectory_provenance(
         ),
         "policy_id": policy_id,
         "selected_analysts": list(selected_analysts),
+        "research_depth": task.get("research_depth"),
+        "output_language": task.get("output_language"),
         "scheduler_max_steps": config.get("scheduler_max_steps"),
         "expert_config_hash": expert_config_hash(
             config,

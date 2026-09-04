@@ -13,8 +13,11 @@ def _task() -> dict:
         "trade_date": "2026-01-05",
         "asset_type": "stock",
         "split": "train",
-        "dataset_version": "scheduler-tasks-v1",
+        "dataset_version": "scheduler-tasks-v2",
         "data_snapshot_id": "snapshot-1",
+        "selected_analysts": ["market", "social", "news", "fundamentals"],
+        "research_depth": "shallow",
+        "output_language": "Chinese",
     }
 
 
@@ -73,6 +76,9 @@ class _Environment:
             "task_split": task["split"],
             "task_dataset_version": task["dataset_version"],
             "information_cutoff": "2026-01-05T23:59:59Z",
+            "selected_analysts": task["selected_analysts"],
+            "research_depth": task["research_depth"],
+            "output_language": task["output_language"],
             "expert_config_hash": "expert-config-1",
             "scheduler_max_steps": 16,
         }
@@ -88,7 +94,6 @@ def test_mock_data_pipeline_reaches_sft_jsonl(monkeypatch, tmp_path) -> None:
         "tasks": [_task()],
         "run_id": "run-1",
         "config": {},
-        "selected_analysts": ("market", "social", "news", "fundamentals"),
     }
     generate_trajectories(output_dir=static_dir, mode="static", **common)
     generate_trajectories(output_dir=teacher_dir, mode="teacher", **common)

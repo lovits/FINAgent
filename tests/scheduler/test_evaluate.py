@@ -42,8 +42,11 @@ def _trajectory(identifier: str, mode: str, actions: list[tuple[str, str | None]
     trajectory.execution_status = "completed"
     trajectory.provenance = {
         "git_commit": "abc123",
-        "task_dataset_version": "scheduler-tasks-v1",
+        "task_dataset_version": "scheduler-tasks-v2",
         "information_cutoff": "2026-01-05T23:59:59Z",
+        "selected_analysts": ["news"],
+        "research_depth": "shallow",
+        "output_language": "Chinese",
         "expert_config_hash": "expert-config-1",
         "generation_config_hash": f"generation-{mode}",
         "quick_model": "expert-quick",

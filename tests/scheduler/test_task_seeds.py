@@ -4,6 +4,7 @@ from collections import Counter
 import pytest
 
 from training.scheduler.task_seeds import (
+    ANALYST_INPUT_SETS,
     SEED_FAMILIES,
     load_feature_rows,
     select_balanced_task_pool,
@@ -50,6 +51,11 @@ def test_builds_exact_balanced_300_task_pool() -> None:
         "reserve": 228,
     }
     assert len({(task.ticker, task.trade_date) for task in tasks}) == 300
+    assert {task.research_depth for task in tasks} == {"shallow"}
+    assert {task.output_language for task in tasks} == {"Chinese"}
+    assert Counter(task.selected_analysts for task in tasks) == dict.fromkeys(
+        ANALYST_INPUT_SETS, 20
+    )
 
 
 def test_writes_pool_splits_and_manifest(tmp_path) -> None:
@@ -65,6 +71,14 @@ def test_writes_pool_splits_and_manifest(tmp_path) -> None:
         "train": 60,
         "validation": 12,
     }
+    assert manifest["analyst_count_counts"] == {
+        "1": 80,
+        "2": 120,
+        "3": 80,
+        "4": 20,
+    }
+    assert manifest["research_depth_counts"] == {"shallow": 300}
+    assert manifest["output_language_counts"] == {"Chinese": 300}
 
 
 def test_feature_loader_rejects_missing_fields(tmp_path) -> None:

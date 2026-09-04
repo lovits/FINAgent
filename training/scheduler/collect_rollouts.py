@@ -11,10 +11,11 @@ from dotenv import load_dotenv
 
 from tradingagents.scheduler.hf_policy import load_shared_hf_scheduler_policies
 from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
+from tradingagents.scheduler.trajectory import SchedulerTrajectory
 
 from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
-from .profile import validate_shallow_runtime, validate_training_profile
+from .profile import resolve_task_runtime, validate_shallow_runtime
 from .reward import RewardConfig
 from .rollout import GroupRolloutRunner, grpo_rows, write_grpo_rows
 from .runtime_config import scheduler_runtime_config
@@ -35,23 +36,12 @@ class RolloutConfig:
     action_temperature: float = 0.8
     max_context_tokens: int = 32768
     max_steps: int = 16
-    selected_analysts: tuple[str, ...] = (
-        "market",
-        "social",
-        "news",
-        "fundamentals",
-    )
     limit: int | None = None
     seed: int = 42
-
-    def __post_init__(self) -> None:
-        validate_training_profile(self.selected_analysts)
 
     @classmethod
     def from_json(cls, path: str | Path) -> RolloutConfig:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
-        if "selected_analysts" in value:
-            value["selected_analysts"] = tuple(value["selected_analysts"])
         return cls(**value)
 
 
@@ -81,31 +71,33 @@ def collect(config: RolloutConfig) -> dict[str, int]:
         reference_adapter_path=config.reference_adapter_path,
         temperature=config.action_temperature,
     )
-    environment = TradingAgentsSchedulerEnvironment(
-        runtime_config,
-        selected_analysts=config.selected_analysts,
-    )
     reward_config = RewardConfig()
     if config.reward_config_path:
         reward_config = RewardConfig(
             **json.loads(Path(config.reward_config_path).read_text(encoding="utf-8"))
         )
-    runner = GroupRolloutRunner(
-        environment,
-        group_size=config.group_size,
-        reward_config=reward_config,
-    )
     trajectories = []
     rows = []
     for index, task in enumerate(tasks):
+        task_config, selected_analysts = resolve_task_runtime(task, runtime_config)
         key = (task["task_id"], task.get("data_snapshot_id"))
         if key not in static_by_key:
             raise ValueError(f"missing Static reference for {key}")
+        static_reference = static_by_key[key]
+        _validate_static_reference(static_reference, task, selected_analysts)
+        runner = GroupRolloutRunner(
+            TradingAgentsSchedulerEnvironment(
+                task_config,
+                selected_analysts=selected_analysts,
+            ),
+            group_size=config.group_size,
+            reward_config=reward_config,
+        )
         scored = runner.run_task(
             task,
             active_policy=active,
             reference_policy=reference,
-            static_reference=static_by_key[key],
+            static_reference=static_reference,
             run_id=config.run_id,
             base_seed=config.seed + index * config.group_size,
         )
@@ -123,6 +115,21 @@ def collect(config: RolloutConfig) -> dict[str, int]:
         {"config": asdict(config), "counts": counts},
     )
     return counts
+
+
+def _validate_static_reference(
+    trajectory: SchedulerTrajectory,
+    task: dict,
+    selected_analysts: tuple[str, ...],
+) -> None:
+    expected = {
+        "selected_analysts": list(selected_analysts),
+        "research_depth": task["research_depth"],
+        "output_language": task["output_language"],
+    }
+    for field, value in expected.items():
+        if trajectory.provenance.get(field) != value:
+            raise ValueError(f"Static reference does not match task input: {field}")
 
 
 def main() -> None:

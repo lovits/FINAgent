@@ -10,8 +10,8 @@ from .actions import SchedulerAction, parse_action
 from .contracts import SchedulerContext
 from .registry import AGENT_CATALOG_VERSION, registry_for_analysts
 
-PROMPT_VERSION = "scheduler-prompt-v2"
-TEACHER_PROMPT_VERSION = "teacher-scheduler-v2"
+PROMPT_VERSION = "scheduler-prompt-v3"
+TEACHER_PROMPT_VERSION = "teacher-scheduler-v3"
 STATE_SCHEMA_VERSION = "scheduler-state-v1"
 COMPLETION_CONTRACT_VERSION = "completion-v1"
 ORCHESTRATION_PROFILE_VERSION = "multi-analyst-shallow-v1"
@@ -41,10 +41,10 @@ produce a trading decision, or output a future route. Choose STOP only when
 the completion contract is satisfied. Return one JSON object and no other text."""
 
 _SHALLOW_DYNAMIC_OBJECTIVE = (
-    "Dynamically choose the minimum sufficient subset of available Expert Agents. "
-    "Prefer a short, low-cost path, avoid redundant evidence and repeated debate, "
-    "and move to synthesis as soon as the current evidence can support a reliable "
-    "complete trading decision. Available analysts are candidates, not mandatory steps."
+    "Execute every analyst selected by the task input exactly once, choosing their "
+    "order dynamically, and never call an unselected analyst. After all selected "
+    "analyst reports are complete, follow a shallow route: avoid redundant debate "
+    "and move promptly through synthesis, trading, risk review, and final decision."
 )
 
 
@@ -80,11 +80,11 @@ def orchestration_profile(
 ) -> dict[str, object]:
     return {
         "profile_id": ORCHESTRATION_PROFILE_VERSION,
-        "analyst_mode": "multi" if len(selected_analysts) > 1 else "single",
-        "available_analysts": list(selected_analysts),
+        "selected_analysts": list(selected_analysts),
+        "selected_analyst_count": len(selected_analysts),
+        "selected_analysts_are_required": True,
         "research_style": "shallow",
         "routing_policy": "dynamic",
-        "available_analysts_are_candidates": True,
         "objective": _SHALLOW_DYNAMIC_OBJECTIVE,
     }
 

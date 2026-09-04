@@ -179,7 +179,7 @@ Scheduler轨迹存储与TradingMemoryLog分开：
 
 ## 4. 目标架构
 
-第一版动态策略只训练`multi-analyst-shallow-v1`。四个Analyst是候选集合而不是固定必经节点；不实现Single、Medium、Deep或多Profile条件化策略。
+第一版动态策略只训练`multi-analyst-shallow-v1`。该Profile统一覆盖输入指定的1～4个Analyst：Scheduler必须完成输入集合中的所有Analyst，但动态决定执行顺序及后续Agent路由；Single与Multi不作为独立Profile。第一版不实现Medium、Deep或多Profile条件化策略。
 
 ### 4.1 控制面与执行面
 
@@ -394,7 +394,7 @@ Mask不规定Market必须先于News，也不规定Bull一定先于Bear；合法�
 
 Scheduler读取：
 
-- `multi-analyst-shallow-v1`动态目标和可用Analyst候选集合；
+- `multi-analyst-shallow-v1`动态目标和输入指定的1～4个必需Analyst；
 - `company_of_interest`、`asset_type`、`trade_date`；
 - `instrument_context`；
 - 四类完整Analyst报告；
@@ -416,7 +416,7 @@ Scheduler读取：
 You select exactly one next Expert Agent action.
 
 <ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1">
-{available_analysts_and_minimum_sufficient_path_objective}
+{input_selected_analysts_and_shallow_dynamic_routing_objective}
 
 <AGENT_CATALOG version="agent-catalog-v1">
 {agent_catalog_json}
@@ -472,7 +472,7 @@ AGENT_CATALOG={agent_catalog_json}
 COMPLETION_CONTRACT={completion_rules_json}
 POSITIVE_EXAMPLES={few_shot_examples_json}
 CORRECTED_FAILURE_EXAMPLES={failure_examples_json}
-PROMPT_VERSION=teacher-scheduler-v2
+PROMPT_VERSION=teacher-scheduler-v3
 ```
 
 Few-shot只展示通用状态—动作关系，不包含当前任务的Static轨迹或答案。
@@ -604,6 +604,9 @@ SchedulerContext
 | `task_id` | string | Task Builder | 所有阶段 |
 | `ticker` | string | Task Builder | TradingAgentsGraph |
 | `trade_date` | date string | Task Builder | TradingAgentsGraph |
+| `selected_analysts` | string[] | Task Builder | Action Mask、Static/Teacher/Learned运行器 |
+| `research_depth` | enum | Task Builder | Profile校验；第一版固定`shallow` |
+| `output_language` | enum | Task Builder | Expert Prompt；第一版固定`Chinese` |
 | `asset_type` | enum | Task Builder | Propagator |
 | `split` | enum | Splitter | DataLoader/Evaluator |
 | `seed_family` | enum | Task Builder | 分层统计 |
@@ -846,7 +849,7 @@ scheduler_max_context_tokens: 32768
 
 teacher_provider: openrouter
 teacher_model: z-ai/glm-5.3-flash
-teacher_prompt_version: teacher-scheduler-v2
+teacher_prompt_version: teacher-scheduler-v3
 
 scheduler_base_model: Qwen/Qwen3-1.7B
 scheduler_base_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e

@@ -21,8 +21,11 @@ def _trajectory(identifier: str, mode: str, rating: str = "Hold") -> SchedulerTr
     }
     trajectory.cost_total = ExecutionCost(agent_calls=10, tool_calls=4)
     trajectory.provenance = {
-        "task_dataset_version": "scheduler-tasks-v1",
+        "task_dataset_version": "scheduler-tasks-v2",
         "information_cutoff": "2026-01-05T23:59:59Z",
+        "selected_analysts": ["market", "news"],
+        "research_depth": "shallow",
+        "output_language": "Chinese",
         "expert_config_hash": "expert-config-1",
         "scheduler_max_steps": 16,
     }

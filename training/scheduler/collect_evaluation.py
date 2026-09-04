@@ -18,11 +18,11 @@ from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
 from .manifest import summarize_trajectories
-from .profile import validate_shallow_runtime, validate_training_profile
-from .provenance import code_provenance, expert_config_hash, generation_config_hash
+from .profile import resolve_task_runtime, validate_shallow_runtime
+from .provenance import code_provenance
 from .runtime_config import scheduler_runtime_config
 
-EVALUATION_COLLECTION_SCHEMA_VERSION = "scheduler-evaluation-collection-v1"
+EVALUATION_COLLECTION_SCHEMA_VERSION = "scheduler-evaluation-collection-v2"
 
 
 @dataclass(frozen=True)
@@ -36,23 +36,12 @@ class EvaluationCollectionConfig:
     split: str = "validation"
     max_context_tokens: int = 32768
     max_steps: int = 16
-    selected_analysts: tuple[str, ...] = (
-        "market",
-        "social",
-        "news",
-        "fundamentals",
-    )
     limit: int | None = None
     resume: bool = False
-
-    def __post_init__(self) -> None:
-        validate_training_profile(self.selected_analysts)
 
     @classmethod
     def from_json(cls, path: str | Path) -> EvaluationCollectionConfig:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
-        if "selected_analysts" in value:
-            value["selected_analysts"] = tuple(value["selected_analysts"])
         return cls(**value)
 
 
@@ -75,10 +64,6 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
     )
     validate_shallow_runtime(runtime_config)
     policy = load_hf_scheduler_policy(runtime_config)
-    environment = TradingAgentsSchedulerEnvironment(
-        runtime_config,
-        selected_analysts=config.selected_analysts,
-    )
     output = Path(config.output_dir)
     raw_store = TrajectoryStore(output / "raw.jsonl")
     accepted_store = TrajectoryStore(output / "accepted.jsonl")
@@ -95,6 +80,7 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
     }
 
     for task in tasks:
+        task_config, selected_analysts = resolve_task_runtime(task, runtime_config)
         trajectory_id = _trajectory_id(task, config.run_id, policy.policy_id)
         if raw_store.contains(trajectory_id):
             if not config.resume:
@@ -103,6 +89,10 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
                 )
             counts["skipped"] += 1
             continue
+        environment = TradingAgentsSchedulerEnvironment(
+            task_config,
+            selected_analysts=selected_analysts,
+        )
         result = environment.run(
             task,
             mode="learned",
@@ -121,6 +111,7 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
             counts["rejected"] += 1
 
     code_metadata = code_provenance(runtime_config.get("project_dir"))
+    collected = raw_store.load()
     write_json_atomic(
         output / "collection_manifest.json",
         {
@@ -131,21 +122,43 @@ def collect(config: EvaluationCollectionConfig) -> dict[str, int]:
             "task_key_fields": ["task_id", "data_snapshot_id"],
             "scheduler_temperature": 0.0,
             "expert_temperature": 0.0,
-            "expert_config_hash": expert_config_hash(
-                runtime_config,
-                selected_analysts=config.selected_analysts,
+            "task_inputs": {
+                "analyst_sets": sorted(
+                    {
+                        tuple(trajectory.provenance.get("selected_analysts") or ())
+                        for trajectory in collected
+                    }
+                ),
+                "output_languages": sorted(
+                    {
+                        str(trajectory.provenance["output_language"])
+                        for trajectory in collected
+                    }
+                ),
+                "research_depths": sorted(
+                    {
+                        str(trajectory.provenance["research_depth"])
+                        for trajectory in collected
+                    }
+                ),
+            },
+            "expert_config_hashes": sorted(
+                {
+                    str(trajectory.provenance["expert_config_hash"])
+                    for trajectory in collected
+                }
             ),
             **code_metadata,
-            "generation_config_hash": generation_config_hash(
-                runtime_config,
-                mode="learned",
-                policy_id=policy.policy_id,
-                selected_analysts=config.selected_analysts,
+            "generation_config_hashes": sorted(
+                {
+                    str(trajectory.provenance["generation_config_hash"])
+                    for trajectory in collected
+                }
             ),
             "started_at": started_at,
             "completed_at": datetime.now(UTC).isoformat(),
             "counts": counts,
-            "dataset_counts": summarize_trajectories(raw_store.load()),
+            "dataset_counts": summarize_trajectories(collected),
         },
     )
     return counts
@@ -157,6 +170,9 @@ def _trajectory_id(task: dict, run_id: str, policy_id: str) -> str:
             run_id,
             str(task["task_id"]),
             str(task.get("data_snapshot_id") or "none"),
+            "+".join(task["selected_analysts"]),
+            str(task["research_depth"]),
+            str(task["output_language"]),
             policy_id,
         )
     )

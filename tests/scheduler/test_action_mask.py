@@ -21,13 +21,22 @@ def test_initial_mask_contains_only_selected_missing_analysts() -> None:
     assert mask.valid_actions == (SchedulerAction.MARKET, SchedulerAction.NEWS)
 
 
-def test_analysis_unlocks_researchers_without_forcing_fixed_order() -> None:
+def test_research_waits_for_every_input_selected_analyst() -> None:
     state = _state()
     state["news_report"] = "complete news evidence"
-    actions = compute_action_mask(state).valid_actions
+    actions = compute_action_mask(state, ("market", "news")).valid_actions
 
     assert SchedulerAction.MARKET in actions
     assert SchedulerAction.NEWS not in actions
+    assert SchedulerAction.BULL not in actions
+    assert SchedulerAction.BEAR not in actions
+
+
+def test_all_input_selected_analysts_unlock_researchers() -> None:
+    state = _state()
+    state["news_report"] = "complete news evidence"
+    actions = compute_action_mask(state, ("news",)).valid_actions
+
     assert SchedulerAction.BULL in actions
     assert SchedulerAction.BEAR in actions
 
@@ -36,7 +45,7 @@ def test_debate_unlocks_research_manager() -> None:
     state = _state()
     state["market_report"] = "market evidence"
     state["investment_debate_state"] = {"history": "Bull: evidence", "count": 1}
-    actions = compute_action_mask(state).valid_actions
+    actions = compute_action_mask(state, ("market",)).valid_actions
     assert SchedulerAction.RESEARCH_MANAGER in actions
 
 
@@ -44,7 +53,7 @@ def test_shallow_intent_does_not_hard_code_debate_or_risk_turn_counts() -> None:
     state = _state()
     state["market_report"] = "market evidence"
     state["investment_debate_state"] = {"history": "long debate", "count": 99}
-    debate_actions = compute_action_mask(state).valid_actions
+    debate_actions = compute_action_mask(state, ("market",)).valid_actions
 
     assert SchedulerAction.BULL in debate_actions
     assert SchedulerAction.BEAR in debate_actions

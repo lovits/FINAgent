@@ -24,7 +24,7 @@ learned → Qwen3-1.7B本地动态编排
 
 Teacher与Learned只选择下一位Expert Agent。Expert Agent内部继续使用原LLM、Prompt和Tool。
 
-第一版训练范围锁定为`multi-analyst-shallow-v1`：四个Analyst均可用但不是必选；Shallow只作为最小充分路径的Prompt目标，使用唯一一套Reward。不增加Single、Medium、Deep或模式化Reward。
+第一版训练范围锁定为`multi-analyst-shallow-v1`：任务输入指定1～4个必须完成的Analyst，Scheduler只学习其执行顺序和后续Agent动态路由；Shallow作为短路径、少重复讨论的Prompt目标，所有Analyst集合大小共用同一套Reward。Single与Multi不拆成不同模式，不增加Medium、Deep或模式化Reward。
 
 ## 2. 原代码的优化点
 

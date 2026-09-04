@@ -1,3 +1,3 @@
 {"state_fact":"No analyst report exists yet.","valid_actions":["<ACT_MARKET>","<ACT_NEWS>"],"output":{"action":"<ACT_MARKET>"}}
 {"state_fact":"A complete final_trade_decision already exists.","valid_actions":["<ACT_STOP>"],"output":{"action":"<ACT_STOP>"}}
-{"profile_id":"multi-analyst-shallow-v1","state_fact":"Available analyst reports already provide sufficient aligned evidence and research debate content exists; unused analysts remain optional.","valid_actions":["<ACT_SENTIMENT>","<ACT_FUNDAMENTALS>","<ACT_BULL>","<ACT_BEAR>","<ACT_RESEARCH_MANAGER>"],"output":{"action":"<ACT_RESEARCH_MANAGER>"}}
+{"profile_id":"multi-analyst-shallow-v1","state_fact":"Every analyst selected by the task input has completed its report and research debate content exists.","valid_actions":["<ACT_BULL>","<ACT_BEAR>","<ACT_RESEARCH_MANAGER>"],"output":{"action":"<ACT_RESEARCH_MANAGER>"}}

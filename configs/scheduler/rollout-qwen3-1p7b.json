@@ -12,6 +12,5 @@
   "action_temperature": 0.8,
   "max_context_tokens": 32768,
   "max_steps": 16,
-  "selected_analysts": ["market", "social", "news", "fundamentals"],
   "seed": 42
 }

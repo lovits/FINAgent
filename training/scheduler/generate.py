@@ -31,11 +31,11 @@ from .audit import audit_trajectory
 from .environment import TradingAgentsSchedulerEnvironment
 from .manifest import summarize_trajectories
 from .memory_snapshot import build_memory_snapshot
-from .profile import validate_shallow_runtime, validate_training_profile
+from .profile import resolve_task_runtime
 from .provenance import code_provenance, expert_config_hash, generation_config_hash
 from .runtime_config import scheduler_runtime_config
 
-GENERATION_SCHEMA_VERSION = "scheduler-generation-v1"
+GENERATION_SCHEMA_VERSION = "scheduler-generation-v2"
 
 
 def load_tasks(path: str | Path, *, split: str | None = None) -> list[dict[str, Any]]:
@@ -50,6 +50,7 @@ def load_tasks(path: str | Path, *, split: str | None = None) -> list[dict[str, 
                 for field in ("task_id", "ticker", "trade_date"):
                     if not task.get(field):
                         raise ValueError(f"missing {field}")
+                resolve_task_runtime(task, {})
             except (json.JSONDecodeError, TypeError, ValueError) as exc:
                 raise ValueError(f"invalid task at {source}:{line_number}: {exc}") from exc
             if split is None or task.get("split") == split:
@@ -64,24 +65,17 @@ def generate_trajectories(
     mode: str,
     run_id: str,
     config: dict[str, Any],
-    selected_analysts: tuple[str, ...],
     resume: bool = False,
     memory_log_path: str | None = None,
 ) -> dict[str, int]:
     if mode not in {"static", "teacher"}:
         raise ValueError("data generation mode must be static or teacher")
-    selected_analysts = validate_training_profile(selected_analysts)
-    validate_shallow_runtime(config)
     started_at = datetime.now(UTC).isoformat()
     output = Path(output_dir)
     raw_store = TrajectoryStore(output / "raw.jsonl")
     accepted_store = TrajectoryStore(output / "accepted.jsonl")
     rejected_store = TrajectoryStore(output / "rejected.jsonl")
     policy = _teacher_policy(config) if mode == "teacher" else None
-    environment = TradingAgentsSchedulerEnvironment(
-        config,
-        selected_analysts=selected_analysts,
-    )
     counts = {
         "accepted": 0,
         "rejected": 0,
@@ -94,8 +88,30 @@ def generate_trajectories(
     }
     task_count = 0
     task_dataset_versions = set()
+    analyst_sets: set[tuple[str, ...]] = set()
+    output_languages: set[str] = set()
+    research_depths: set[str] = set()
+    expert_config_hashes: set[str] = set()
+    generation_config_hashes: set[str] = set()
     for source_task in tasks:
         task = dict(source_task)
+        task_config, selected_analysts = resolve_task_runtime(task, config)
+        analyst_sets.add(selected_analysts)
+        output_languages.add(str(task["output_language"]))
+        research_depths.add(str(task["research_depth"]))
+        expert_config_hashes.add(
+            expert_config_hash(task_config, selected_analysts=selected_analysts)
+        )
+        generation_config_hashes.add(
+            generation_config_hash(
+                task_config,
+                mode=mode,
+                policy_id=(
+                    "static-langgraph-v1" if policy is None else policy.policy_id
+                ),
+                selected_analysts=selected_analysts,
+            )
+        )
         task_count += 1
         if task.get("dataset_version"):
             task_dataset_versions.add(str(task["dataset_version"]))
@@ -115,6 +131,10 @@ def generate_trajectories(
                 )
             counts["skipped"] += 1
             continue
+        environment = TradingAgentsSchedulerEnvironment(
+            task_config,
+            selected_analysts=selected_analysts,
+        )
         result = environment.run(
             task,
             mode=mode,
@@ -133,7 +153,6 @@ def generate_trajectories(
             rejected_store.append(result.trajectory)
             counts["rejected"] += 1
 
-    policy_id = "static-langgraph-v1" if policy is None else policy.policy_id
     code_metadata = code_provenance(config.get("project_dir"))
     write_json_atomic(
         output / "generation_manifest.json",
@@ -144,7 +163,11 @@ def generate_trajectories(
             "task_count": task_count,
             "task_dataset_versions": sorted(task_dataset_versions),
             "trajectories_per_task": 1,
-            "selected_analysts": list(selected_analysts),
+            "task_inputs": {
+                "analyst_sets": [list(values) for values in sorted(analyst_sets)],
+                "output_languages": sorted(output_languages),
+                "research_depths": sorted(research_depths),
+            },
             "teacher_model": None if policy is None else policy.gateway.model,
             "teacher_prompt_version": (
                 TEACHER_PROMPT_VERSION if policy is not None else None
@@ -155,10 +178,7 @@ def generate_trajectories(
                 "quick": config.get("quick_think_llm"),
                 "deep": config.get("deep_think_llm"),
             },
-            "expert_config_hash": expert_config_hash(
-                config,
-                selected_analysts=selected_analysts,
-            ),
+            "expert_config_hashes": sorted(expert_config_hashes),
             "schema_versions": {
                 "trajectory": TRAJECTORY_SCHEMA_VERSION,
                 "actions": ACTION_SCHEMA_VERSION,
@@ -167,12 +187,7 @@ def generate_trajectories(
                 "scheduler_prompt": PROMPT_VERSION,
             },
             **code_metadata,
-            "generation_config_hash": generation_config_hash(
-                config,
-                mode=mode,
-                policy_id=policy_id,
-                selected_analysts=selected_analysts,
-            ),
+            "generation_config_hashes": sorted(generation_config_hashes),
             "started_at": started_at,
             "completed_at": datetime.now(UTC).isoformat(),
             "counts": counts,
@@ -201,6 +216,9 @@ def _trajectory_id(
         (
             str(task["task_id"]),
             str(task.get("data_snapshot_id") or "none"),
+            "+".join(task["selected_analysts"]),
+            str(task["research_depth"]),
+            str(task["output_language"]),
             mode,
             policy_id or "static-langgraph-v1",
         )
@@ -222,7 +240,6 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--run-id")
-    parser.add_argument("--analysts", default="market,social,news,fundamentals")
     parser.add_argument("--memory-log")
     args = parser.parse_args()
 
@@ -230,14 +247,12 @@ def main() -> None:
     if args.limit is not None:
         tasks = tasks[: args.limit]
     run_id = args.run_id or datetime.now(UTC).strftime(f"{args.mode}-%Y%m%dT%H%M%SZ")
-    selected = tuple(value.strip() for value in args.analysts.split(",") if value.strip())
     counts = generate_trajectories(
         tasks,
         output_dir=args.output_dir,
         mode=args.mode,
         run_id=run_id,
         config=_runtime_config(),
-        selected_analysts=selected,
         resume=args.resume,
         memory_log_path=args.memory_log,
     )

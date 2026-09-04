@@ -80,13 +80,15 @@ def test_trajectory_provenance_records_versions_without_secrets() -> None:
     provenance = trajectory_provenance(
         config=_config(OPENROUTER_API_KEY="must-not-leak"),
         task={
-            "dataset_version": "scheduler-tasks-v1",
+            "dataset_version": "scheduler-tasks-v2",
             "split": "train",
             "seed_family": "earnings_window",
             "sector": "Technology",
             "information_cutoff": "2026-08-27T23:59:59Z",
             "data_snapshot_id": "snapshot-1",
             "memory_snapshot_id": "memory-1",
+            "research_depth": "shallow",
+            "output_language": "Chinese",
         },
         mode="teacher",
         policy_id="teacher-v1",
@@ -95,10 +97,13 @@ def test_trajectory_provenance_records_versions_without_secrets() -> None:
     )
 
     assert provenance["teacher_model"] == "z-ai/glm-5.3-flash"
-    assert provenance["task_dataset_version"] == "scheduler-tasks-v1"
+    assert provenance["task_dataset_version"] == "scheduler-tasks-v2"
     assert provenance["data_snapshot_id"] == "snapshot-1"
+    assert provenance["selected_analysts"] == ["market", "news"]
+    assert provenance["research_depth"] == "shallow"
+    assert provenance["output_language"] == "Chinese"
     assert provenance["action_schema_version"] == "scheduler-actions-v1"
-    assert provenance["scheduler_prompt_version"] == "scheduler-prompt-v2"
+    assert provenance["scheduler_prompt_version"] == "scheduler-prompt-v3"
     assert provenance["orchestration_profile_version"] == (
         "multi-analyst-shallow-v1"
     )

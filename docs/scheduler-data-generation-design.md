@@ -118,6 +118,9 @@ Train每类10条，Validation每类2条：
 | `task_id` | string | 是 | 全局唯一任务ID |
 | `ticker` | string | 是 | 股票代码 |
 | `trade_date` | string | 是 | `YYYY-MM-DD`决策日期 |
+| `selected_analysts` | string[] | 是 | 原始输入指定的1～4个Analyst；这些Analyst均需完成 |
+| `research_depth` | enum | 是 | 第一版固定`shallow` |
+| `output_language` | enum | 是 | 第一版固定`Chinese`，完整报告默认输出中文 |
 | `asset_type` | enum | 是 | 第一版固定`stock` |
 | `split` | enum | 是 | `train`、`validation`或`reserve` |
 | `seed_family` | enum | 是 | 六类场景之一 |
@@ -137,6 +140,12 @@ Train每类10条，Validation每类2条：
   "earnings_window": false
 }
 ```
+
+### 4.4 输入模式覆盖
+
+第一版只生成中文`Shallow`任务，不混入Medium或Deep。四类Analyst共有15种非空输入组合；300条任务中每种组合出现20次，Train的60条任务中每种组合出现4次。这里的组合是TaskSeed预先给定的约束，不是Scheduler需要预测的标签。
+
+运行时先读取TaskSeed中的`selected_analysts`，Action Mask只暴露这些Analyst，并要求全部生成报告；Scheduler学习的是它们的执行顺序及后续Agent路由。
 
 ## 5. Agent动作空间
 
@@ -256,7 +265,7 @@ Teacher模型只选择下一动作，不生成完整Agent调用计划。
 
 第一版Teacher固定为OpenRouter上的`z-ai/glm-5.3-flash`，使用其Structured Outputs能力约束单动作JSON；API Key只从`OPENROUTER_API_KEY`环境变量读取。
 
-Teacher数据只生成`multi-analyst-shallow-v1`：四个Analyst全部进入候选集合，但Teacher可以只调用其中满足当前任务所需的子集，并自主决定Bull/Bear与Risk讨论长度。
+Teacher数据只生成`multi-analyst-shallow-v1`：每次轨迹接收由任务输入指定的1～4个Analyst，Teacher必须让这些Analyst各完成一次报告，但可动态决定执行顺序，并自主决定Bull/Bear与Risk讨论长度。Single与Multi只是输入集合大小不同，不是不同训练模式；配对的Static与Teacher轨迹必须使用完全相同的Analyst集合。
 
 ### 8.2 Teacher输入
 
@@ -438,6 +447,9 @@ expert | tool | message_cleanup | scheduler
 | `teacher_model` | Teacher路线使用的模型；Static为空 |
 | `teacher_prompt_version` | Teacher Prompt版本 |
 | `orchestration_profile_version` | 固定为`multi-analyst-shallow-v1` |
+| `selected_analysts` | 本任务输入指定的Analyst集合 |
+| `research_depth` | 固定为`shallow` |
+| `output_language` | 固定为`Chinese` |
 | `agent_catalog_version` | Agent说明书版本 |
 | `action_schema_version` | 动作空间版本 |
 | `state_schema_version` | 状态序列化版本 |
@@ -451,15 +463,21 @@ API Key不属于`provenance`。
 {
   "run_id": "...",
   "mode": "teacher",
-  "task_dataset_version": "tasks-v1",
+  "task_dataset_versions": ["scheduler-tasks-v2"],
   "task_count": 60,
   "trajectories_per_task": 1,
-  "selected_analysts": ["market", "social", "news", "fundamentals"],
+  "task_inputs": {
+    "analyst_sets": [["market"], ["market", "news"]],
+    "research_depths": ["shallow"],
+    "output_languages": ["Chinese"]
+  },
   "graph_config": {},
   "expert_models": {},
   "teacher_model": "...",
   "orchestration_profile_version": "multi-analyst-shallow-v1",
   "schema_versions": {},
+  "expert_config_hashes": ["..."],
+  "generation_config_hashes": ["..."],
   "started_at": "...",
   "completed_at": "...",
   "counts": {

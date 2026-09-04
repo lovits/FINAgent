@@ -13,7 +13,13 @@ from typing import Any, Literal
 
 from tradingagents.scheduler.store import write_json_atomic
 
-TASK_DATASET_VERSION = "scheduler-tasks-v1"
+from .profile import (
+    CHINESE_OUTPUT_LANGUAGE,
+    SHALLOW_RESEARCH_DEPTH,
+    validate_training_profile,
+)
+
+TASK_DATASET_VERSION = "scheduler-tasks-v2"
 SEED_FAMILIES = (
     "earnings_window",
     "positive_momentum",
@@ -23,6 +29,24 @@ SEED_FAMILIES = (
     "quiet_control",
 )
 TaskSplit = Literal["train", "validation", "reserve"]
+
+ANALYST_INPUT_SETS = (
+    ("market",),
+    ("market", "news"),
+    ("market", "social", "news"),
+    ("fundamentals",),
+    ("social",),
+    ("market", "social"),
+    ("market", "news", "fundamentals"),
+    ("news",),
+    ("market", "fundamentals"),
+    ("social", "news", "fundamentals"),
+    ("market", "social", "news", "fundamentals"),
+    ("social", "news"),
+    ("market", "social", "fundamentals"),
+    ("news", "fundamentals"),
+    ("social", "fundamentals"),
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +61,9 @@ class TaskSeed:
     data_snapshot_id: str
     information_cutoff: str
     selection_features: dict[str, float | bool]
+    selected_analysts: tuple[str, ...]
+    research_depth: Literal["shallow"]
+    output_language: Literal["Chinese"]
     dataset_version: str = TASK_DATASET_VERSION
 
     def __post_init__(self) -> None:
@@ -46,7 +73,12 @@ class TaskSeed:
             raise ValueError(f"unknown task split: {self.split}")
         date.fromisoformat(self.trade_date)
         if self.asset_type != "stock":
-            raise ValueError("scheduler task v1 supports stock tasks only")
+            raise ValueError("scheduler task v2 supports stock tasks only")
+        validate_training_profile(self.selected_analysts)
+        if self.research_depth != SHALLOW_RESEARCH_DEPTH:
+            raise ValueError("scheduler task v2 only supports shallow research")
+        if self.output_language != CHINESE_OUTPUT_LANGUAGE:
+            raise ValueError("scheduler task v2 only supports Chinese output")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -159,6 +191,7 @@ def select_balanced_task_pool(
                 f"only {len(family_rows)} eligible unique rows for {family}; "
                 f"required {tasks_per_family}"
             )
+        task_offset = len(selected)
         selected.extend(
             _task_from_row(
                 row,
@@ -168,6 +201,7 @@ def select_balanced_task_pool(
                     train_per_family=train_per_family,
                     validation_per_family=validation_per_family,
                 ),
+                analyst_set_index=task_offset + index,
             )
             for index, row in enumerate(family_rows)
         )
@@ -216,7 +250,13 @@ def _split_for_index(
     return "reserve"
 
 
-def _task_from_row(row: Mapping[str, Any], family: str, split: TaskSplit) -> TaskSeed:
+def _task_from_row(
+    row: Mapping[str, Any],
+    family: str,
+    split: TaskSplit,
+    *,
+    analyst_set_index: int,
+) -> TaskSeed:
     ticker = str(row["ticker"]).upper()
     trade_date = str(row["trade_date"])
     return TaskSeed(
@@ -237,6 +277,11 @@ def _task_from_row(row: Mapping[str, Any], family: str, split: TaskSplit) -> Tas
             "volume_zscore_20d": round(float(row["volume_zscore_20d"]), 6),
             "earnings_window": bool(row["earnings_window"]),
         },
+        selected_analysts=ANALYST_INPUT_SETS[
+            analyst_set_index % len(ANALYST_INPUT_SETS)
+        ],
+        research_depth=SHALLOW_RESEARCH_DEPTH,
+        output_language=CHINESE_OUTPUT_LANGUAGE,
     )
 
 
@@ -254,6 +299,14 @@ def write_task_dataset(tasks: Sequence[TaskSeed], output_dir: str | Path) -> Non
         "total": len(tasks),
         "split_counts": {key: len(values) for key, values in grouped.items()},
         "family_counts": dict(Counter(task.seed_family for task in tasks)),
+        "analyst_count_counts": dict(
+            sorted(Counter(len(task.selected_analysts) for task in tasks).items())
+        ),
+        "analyst_set_counts": dict(
+            sorted(Counter("+".join(task.selected_analysts) for task in tasks).items())
+        ),
+        "research_depth_counts": dict(Counter(task.research_depth for task in tasks)),
+        "output_language_counts": dict(Counter(task.output_language for task in tasks)),
     }
     write_json_atomic(destination / "manifest.json", manifest)
 

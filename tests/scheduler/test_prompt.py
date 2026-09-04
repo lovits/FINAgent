@@ -51,8 +51,22 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
     assert "tool_policy_owner" in prompt
     assert 'ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1"' in prompt
     assert '"research_style": "shallow"' in prompt
-    assert '"available_analysts_are_candidates": true' in prompt
-    assert "minimum sufficient subset" in prompt
+    assert '"selected_analysts_are_required": true' in prompt
+    assert "every analyst selected by the task input exactly once" in prompt
+
+
+def test_scheduler_input_uses_one_profile_for_single_analyst_pool() -> None:
+    prompt = build_scheduler_input(
+        task_id="AAPL_2026-01-05_quiet_control",
+        state=_state(),
+        valid_actions=(SchedulerAction.MARKET,),
+        selected_analysts=("market",),
+    )
+
+    assert '"selected_analyst_count": 1' in prompt
+    assert '"selected_analysts": ["market"]' in prompt
+    assert '"analyst_mode"' not in prompt
+    assert '"research_style": "shallow"' in prompt
 
 
 def test_teacher_schema_is_locked_to_valid_actions() -> None:

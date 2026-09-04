@@ -25,8 +25,11 @@ def _trajectory(identifier: str, mode: str) -> SchedulerTrajectory:
         "final_trade_decision": "**Rating**: Hold",
     }
     trajectory.provenance = {
-        "task_dataset_version": "scheduler-tasks-v1",
+        "task_dataset_version": "scheduler-tasks-v2",
         "information_cutoff": "2026-01-05T23:59:59Z",
+        "selected_analysts": ["market", "news"],
+        "research_depth": "shallow",
+        "output_language": "Chinese",
         "expert_config_hash": "expert-config-1",
         "scheduler_max_steps": 16,
     }

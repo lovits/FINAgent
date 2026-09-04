@@ -74,7 +74,11 @@ def _task() -> dict:
         "trade_date": "2026-01-05",
         "asset_type": "stock",
         "split": "train",
+        "dataset_version": "scheduler-tasks-v2",
         "data_snapshot_id": "snapshot-1",
+        "selected_analysts": ["market"],
+        "research_depth": "shallow",
+        "output_language": "Chinese",
     }
 
 
@@ -86,7 +90,6 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
         mode="static",
         run_id="run-1",
         config={},
-        selected_analysts=("market", "social", "news", "fundamentals"),
     )
 
     assert counts == {
@@ -108,7 +111,13 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
     assert manifest["orchestration_profile_version"] == (
         "multi-analyst-shallow-v1"
     )
-    assert len(manifest["generation_config_hash"]) == 64
+    assert manifest["task_inputs"] == {
+        "analyst_sets": [["market"]],
+        "output_languages": ["Chinese"],
+        "research_depths": ["shallow"],
+    }
+    assert len(manifest["generation_config_hashes"]) == 1
+    assert len(manifest["generation_config_hashes"][0]) == 64
     assert "git_commit" in manifest
     assert manifest["dataset_counts"]["total"] == 1
     assert manifest["dataset_counts"]["completed"] == 1
@@ -119,7 +128,6 @@ def test_generation_writes_audited_trajectory_and_manifest(monkeypatch, tmp_path
         mode="static",
         run_id="run-1",
         config={},
-        selected_analysts=("market", "social", "news", "fundamentals"),
         resume=True,
     )
     assert resumed["skipped"] == 1
@@ -138,7 +146,6 @@ def test_generation_requires_resume_for_existing_record(monkeypatch, tmp_path) -
         "mode": "static",
         "run_id": "run-1",
         "config": {},
-        "selected_analysts": ("market", "news"),
     }
     generate_trajectories(**arguments)
     with pytest.raises(FileExistsError, match="--resume"):
