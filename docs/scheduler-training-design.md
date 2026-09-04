@@ -140,14 +140,11 @@ Choose exactly one next Expert Agent action.
 <AGENT_CATALOG>
 当前任务全部Agent的完整说明，包括action、purpose、reads、writes、前置条件、完成信号和内部工具摘要
 
-<CURRENT_VALID_AGENT_CARDS>
-再次提供当前合法Agent的完整说明，帮助模型聚焦本次决策
-
 <COMPLETION_CONTRACT>
 完成条件、STOP条件、最大步数
 
 <ROUTING_FEATURES>
-指定报告完成情况、报告长度、Research/Trading/Risk进度
+指定报告完成/缺失情况，以及Research和Risk的参与者与轮数
 
 <CURRENT_STATE>
 ticker、日期、四类报告、Research Debate、Investment Plan、Trader Plan、Risk Debate、Final Decision、past_context

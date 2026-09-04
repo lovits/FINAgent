@@ -7,7 +7,6 @@ from tradingagents.scheduler.prompt import (
     build_scheduler_input,
     build_teacher_correction,
     build_teacher_messages,
-    current_valid_agent_cards,
     routing_features,
     teacher_response_schema,
 )
@@ -53,7 +52,7 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
     assert '"remaining_steps": 14' in prompt
     assert "tool_policy_owner" in prompt
     assert '<AGENT_CATALOG version="agent-catalog-v2">' in prompt
-    assert '<CURRENT_VALID_AGENT_CARDS version="agent-catalog-v2">' in prompt
+    assert "<CURRENT_VALID_AGENT_CARDS" not in prompt
     assert "<ROUTING_FEATURES>" in prompt
     assert 'ORCHESTRATION_PROFILE version="multi-analyst-shallow-v1"' in prompt
     assert '"research_style": "shallow"' in prompt
@@ -71,19 +70,13 @@ def test_scheduler_input_keeps_complete_reports_and_excludes_raw_messages() -> N
     assert "get_stock_data" in prompt
 
 
-def test_full_catalog_is_preserved_and_valid_agents_are_repeated_for_focus() -> None:
+def test_full_catalog_is_preserved_without_duplicate_valid_agent_cards() -> None:
     selected = ("market", "social", "news", "fundamentals")
     catalog = agent_catalog(selected)
-    cards = current_valid_agent_cards(
-        selected,
-        (SchedulerAction.SENTIMENT, SchedulerAction.BULL),
-    )
 
     assert len(catalog) == 12
     assert all("completion_signal" in item for item in catalog)
     assert any("get_stock_data" in item["internal_tools"] for item in catalog)
-    assert {item["action"] for item in cards} == {"<ACT_SENTIMENT>", "<ACT_BULL>"}
-    assert all("completion_signal" in item for item in cards)
 
 
 def test_routing_features_summarize_reports_and_progress() -> None:
@@ -92,13 +85,13 @@ def test_routing_features_summarize_reports_and_progress() -> None:
         ("market", "social", "news", "fundamentals"),
     )
 
-    reports = features["reports"]
-    assert reports["completed"] == ["market_report", "news_report"]
-    assert reports["missing"] == ["sentiment_report", "fundamentals_report"]
-    assert reports["character_counts"]["market_report"] == 2000
-    assert features["research"]["investment_plan_ready"] is False
+    assert features["completed_reports"] == ["market_report", "news_report"]
+    assert features["missing_reports"] == [
+        "sentiment_report",
+        "fundamentals_report",
+    ]
+    assert features["research"]["speakers"] == []
     assert features["risk"]["speakers"] == []
-    assert features["final_decision_ready"] is False
 
 
 def test_scheduler_input_uses_one_profile_for_single_analyst_pool() -> None:

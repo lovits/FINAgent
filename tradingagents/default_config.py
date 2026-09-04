@@ -119,7 +119,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "scheduler_max_context_tokens": 32768,
     "teacher_provider": "openrouter",
     "teacher_model": "z-ai/glm-5.3-flash",
-    "teacher_prompt_version": "teacher-scheduler-v6",
+    "teacher_prompt_version": "teacher-scheduler-v7",
     "teacher_base_url": "https://openrouter.ai/api/v1",
     "teacher_timeout_seconds": 90.0,
     "teacher_temperature": 0.2,

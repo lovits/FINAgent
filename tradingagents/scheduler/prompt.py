@@ -10,8 +10,8 @@ from .actions import SchedulerAction, parse_action
 from .contracts import SchedulerContext
 from .registry import AGENT_CATALOG_VERSION, registry_for_analysts
 
-PROMPT_VERSION = "scheduler-prompt-v6"
-TEACHER_PROMPT_VERSION = "teacher-scheduler-v6"
+PROMPT_VERSION = "scheduler-prompt-v7"
+TEACHER_PROMPT_VERSION = "teacher-scheduler-v7"
 STATE_SCHEMA_VERSION = "scheduler-state-v1"
 COMPLETION_CONTRACT_VERSION = "completion-v1"
 ORCHESTRATION_PROFILE_VERSION = "multi-analyst-shallow-v1"
@@ -114,18 +114,6 @@ def agent_catalog(selected_analysts: tuple[str, ...]) -> list[dict[str, object]]
     return [spec.to_prompt_dict() for spec in registry_for_analysts(selected_analysts)]
 
 
-def current_valid_agent_cards(
-    selected_analysts: tuple[str, ...],
-    valid_actions: Sequence[SchedulerAction],
-) -> list[dict[str, object]]:
-    valid = set(valid_actions)
-    return [
-        spec.to_prompt_dict()
-        for spec in registry_for_analysts(selected_analysts)
-        if spec.action in valid
-    ]
-
-
 def routing_features(
     state: Mapping[str, Any], selected_analysts: tuple[str, ...]
 ) -> dict[str, object]:
@@ -136,33 +124,23 @@ def routing_features(
     debate = state.get("investment_debate_state") or {}
     risk = state.get("risk_debate_state") or {}
     return {
-        "reports": {
-            "required": required_reports,
-            "completed": completed_reports,
-            "missing": [
-                field for field in required_reports if field not in completed_reports
-            ],
-            "character_counts": {
-                field: len(str(state.get(field) or "")) for field in required_reports
-            },
-        },
+        "completed_reports": completed_reports,
+        "missing_reports": [
+            field for field in required_reports if field not in completed_reports
+        ],
         "research": {
             "turn_count": int(debate.get("count") or 0),
-            "has_history": bool(str(debate.get("history") or "").strip()),
-            "has_bull_view": bool(str(debate.get("bull_history") or "").strip()),
-            "has_bear_view": bool(str(debate.get("bear_history") or "").strip()),
-            "investment_plan_ready": bool(
-                str(state.get("investment_plan") or "").strip()
-            ),
-        },
-        "trading": {
-            "trader_plan_ready": bool(
-                str(state.get("trader_investment_plan") or "").strip()
-            )
+            "speakers": [
+                name
+                for name, field in (
+                    ("bull", "bull_history"),
+                    ("bear", "bear_history"),
+                )
+                if bool(str(debate.get(field) or "").strip())
+            ],
         },
         "risk": {
             "turn_count": int(risk.get("count") or 0),
-            "has_history": bool(str(risk.get("history") or "").strip()),
             "speakers": [
                 name
                 for name, field in (
@@ -173,9 +151,6 @@ def routing_features(
                 if bool(str(risk.get(field) or "").strip())
             ],
         },
-        "final_decision_ready": bool(
-            str(state.get("final_trade_decision") or "").strip()
-        ),
     }
 
 
@@ -222,10 +197,6 @@ def build_scheduler_input(
         (
             f'AGENT_CATALOG version="{AGENT_CATALOG_VERSION}"',
             _json(agent_catalog(selected_analysts)),
-        ),
-        (
-            f'CURRENT_VALID_AGENT_CARDS version="{AGENT_CATALOG_VERSION}"',
-            _json(current_valid_agent_cards(selected_analysts, parsed_valid)),
         ),
         (
             f'COMPLETION_CONTRACT version="{COMPLETION_CONTRACT_VERSION}"',

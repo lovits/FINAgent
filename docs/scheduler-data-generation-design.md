@@ -277,7 +277,6 @@ Teacher数据只生成`multi-analyst-shallow-v1`：每次轨迹接收由任务�
 SCHEDULER_ROLE
 ORCHESTRATION_PROFILE
 AGENT_CATALOG
-CURRENT_VALID_AGENT_CARDS
 COMPLETION_CONTRACT
 ROUTING_FEATURES
 CURRENT_AGENT_STATE
@@ -298,7 +297,9 @@ VALID_ACTIONS
 
 不把原始ToolMessage、原始行情表或新闻列表重复喂给Teacher；这些数据由Expert整理为报告。
 
-`AGENT_CATALOG`保留当前任务全部Agent的完整说明；`CURRENT_VALID_AGENT_CARDS`再次给出当前合法Agent的完整卡片，帮助Teacher聚焦本次选择。`ROUTING_FEATURES`以确定性方式提取指定报告的完成/缺失/长度，以及Research、Trading和Risk进度，不调用额外LLM。
+`AGENT_CATALOG`保留当前任务全部Agent的完整说明，`VALID_ACTIONS`通过Action Token指向其中当前合法的Agent。`ROUTING_FEATURES`只以确定性方式提取指定报告的完成/缺失情况，以及Research和Risk的参与者与轮数，不调用额外LLM。
+
+Static与Teacher都复用同一个`write_report_tree()`报告生成器；两种模式可以采用不同Agent顺序，但最终报告目录、章节和Markdown格式一致。
 
 ### 8.3 Teacher输出
 
