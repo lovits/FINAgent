@@ -62,6 +62,10 @@ def build_jobs(
     return jobs
 
 
+def unstarted_jobs(jobs: list[BatchJob]) -> list[BatchJob]:
+    return [job for job in jobs if not Path(job.output_dir).exists()]
+
+
 def _task_label(index: int, task: dict[str, Any]) -> str:
     family = str(task.get("seed_family", "task")).replace("_", "-")
     return f"{index:02d}-{str(task['ticker']).lower()}-{family}"
@@ -186,6 +190,8 @@ def main() -> None:
     parser.add_argument("--run-prefix", required=True)
     parser.add_argument("--max-workers", type=int, default=8)
     parser.add_argument("--repo", default=".")
+    parser.add_argument("--only-unstarted", action="store_true")
+    parser.add_argument("--manifest-dir")
     args = parser.parse_args()
     repo = Path(args.repo).resolve()
     tasks_path = Path(args.tasks).resolve()
@@ -195,11 +201,16 @@ def main() -> None:
         output_root=output_root,
         run_prefix=args.run_prefix,
     )
+    if args.only_unstarted:
+        jobs = unstarted_jobs(jobs)
+    manifest_root = (
+        Path(args.manifest_dir).resolve() if args.manifest_dir else output_root
+    )
     manifest = run_batch(
         jobs,
         repo=repo,
         tasks_path=tasks_path,
-        output_root=output_root,
+        output_root=manifest_root,
         max_workers=args.max_workers,
     )
     print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))

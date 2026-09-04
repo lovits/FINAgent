@@ -204,10 +204,10 @@ Validation：
   --tasks data/scheduler/v1/collection/sft100/tasks.jsonl \
   --output-dir data/scheduler/v1/collection/sft100/runs \
   --run-prefix sft100-v1 \
-  --max-workers 12
+  --max-workers 100
 ```
 
-`batch_manifest.json`持续记录已完成、待运行、accepted、rejected和failed数量。如果有拒绝轨迹，用`collection_plan --offset ...`从未使用的Reserve任务中生成小批量替补；不把拒绝轨迹改名为通过数据。
+`--max-workers 100`使100个轨迹任务全部同时启动，不在批处理器内部排队。`batch_manifest.json`持续记录已完成、待运行、accepted、rejected和failed数量。如果有拒绝轨迹，用`collection_plan --offset ...`从未使用的Reserve任务中生成小批量替补；不把拒绝轨迹改名为通过数据。
 
 ### 9.2 汇总为精确20:80轨迹源
 

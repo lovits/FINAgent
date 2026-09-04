@@ -1,4 +1,4 @@
-from training.scheduler.batch_generate import build_jobs, run_batch
+from training.scheduler.batch_generate import build_jobs, run_batch, unstarted_jobs
 
 
 def _task(task_id: str, role: str) -> dict:
@@ -22,6 +22,15 @@ def test_builds_two_jobs_for_paired_and_one_for_teacher_only(tmp_path) -> None:
         ("AAA", "teacher"),
         ("BBB", "teacher"),
     ]
+
+
+def test_filters_jobs_that_have_already_started(tmp_path) -> None:
+    jobs = build_jobs([_task("AAA", "paired")], output_root=tmp_path, run_prefix="run")
+    started = jobs[0]
+    (tmp_path / "paired" / "01-aaa-quiet-control" / "static").mkdir(parents=True)
+
+    assert unstarted_jobs(jobs) == [jobs[1]]
+    assert started not in unstarted_jobs(jobs)
 
 
 def test_run_batch_records_incremental_results(monkeypatch, tmp_path) -> None:
