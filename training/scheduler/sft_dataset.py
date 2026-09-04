@@ -76,23 +76,13 @@ class HierarchicalSourceSampler(Sampler[int]):
         self,
         rows: Sequence[dict[str, Any]],
         *,
-        warmup_fraction: float = 0.1,
-        warmup_teacher_probability: float = 0.5,
         teacher_probability: float = 0.8,
-        total_epochs: int = 1,
         seed: int = 42,
     ):
-        if not 0 <= warmup_fraction <= 1:
-            raise ValueError("warmup_fraction must be between zero and one")
-        if not 0 <= warmup_teacher_probability <= 1 or not 0 <= teacher_probability <= 1:
-            raise ValueError("source probabilities must be between zero and one")
-        if total_epochs <= 0:
-            raise ValueError("total_epochs must be positive")
+        if not 0 <= teacher_probability <= 1:
+            raise ValueError("teacher_probability must be between zero and one")
         self.rows = rows
-        self.warmup_fraction = warmup_fraction
-        self.warmup_teacher_probability = warmup_teacher_probability
         self.teacher_probability = teacher_probability
-        self.total_epochs = total_epochs
         self.seed = seed
         self.epoch = 0
         self.groups = self._group(rows)
@@ -113,17 +103,15 @@ class HierarchicalSourceSampler(Sampler[int]):
 
     def __iter__(self) -> Iterator[int]:
         rng = random.Random(self.seed + self.epoch)
-        warmup_draws = round(len(self) * self.total_epochs * self.warmup_fraction)
-        for draw in range(len(self)):
-            global_draw = self.epoch * len(self) + draw
-            teacher_probability = (
-                self.warmup_teacher_probability
-                if global_draw < warmup_draws
-                else self.teacher_probability
+        if set(self.groups) == {"static", "teacher"}:
+            teacher_draws = round(len(self) * self.teacher_probability)
+            sources = ["teacher"] * teacher_draws + ["static"] * (
+                len(self) - teacher_draws
             )
-            source = "teacher" if rng.random() < teacher_probability else "static"
-            if source not in self.groups:
-                source = next(iter(self.groups))
+            rng.shuffle(sources)
+        else:
+            sources = [next(iter(self.groups))] * len(self)
+        for source in sources:
             tasks = self.groups[source]
             task_id = rng.choice(tuple(tasks))
             trajectories = tasks[task_id]

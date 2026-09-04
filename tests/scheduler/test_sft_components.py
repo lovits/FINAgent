@@ -72,6 +72,26 @@ def test_hierarchical_sampler_groups_both_teacher_sources_together() -> None:
     assert set(sampler.groups["teacher"]) == {"verified", "audited"}
 
 
+def test_hierarchical_sampler_enforces_two_to_eight_source_ratio() -> None:
+    rows = [
+        *[_row(index, source="static", task_id=f"static-{index}") for index in range(20)],
+        *[
+            _row(index + 20, source="teacher_verified", task_id=f"verified-{index}")
+            for index in range(40)
+        ],
+        *[
+            _row(index + 60, source="teacher_audited", task_id=f"audited-{index}")
+            for index in range(40)
+        ],
+    ]
+    selected_sources = Counter(
+        "static" if rows[index]["source"] == "static" else "teacher"
+        for index in HierarchicalSourceSampler(rows, teacher_probability=0.8)
+    )
+
+    assert selected_sources == {"static": 20, "teacher": 80}
+
+
 def test_sft_train_and_validation_tasks_must_be_disjoint() -> None:
     validate_task_isolation([_row(0, task_id="train-1")], [_row(1, task_id="valid-1")])
 

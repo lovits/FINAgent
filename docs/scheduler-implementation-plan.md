@@ -352,8 +352,7 @@ configs/scheduler/sft-qwen3-1p7b.json
 ### 数据采样
 
 ```text
-前10%更新：Static 50% / Teacher 50%
-剩余90%：Static 20% / Teacher 80%
+每个Epoch固定：Static 20% / Teacher 80%
 ```
 
 Sampler按来源→任务→轨迹→步骤选择，避免长轨迹支配训练。

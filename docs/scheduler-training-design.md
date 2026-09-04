@@ -194,11 +194,10 @@ data/scheduler/v1/sft/manifest.json
 
 ## 7. SFT样本混合
 
-先用Static稳住依赖，再以Teacher动态路径为主：
+整个SFT阶段固定使用2:8来源比例，以Teacher动态路径为主：
 
 ```text
-前10% optimizer updates：Static 50% / Teacher 50%
-剩余90% optimizer updates：Static 20% / Teacher 80%
+每个Epoch：Static 20% / Teacher 80%
 ```
 
 采样比例由分层Sampler实现，不复制JSONL样本。`teacher_verified`和`teacher_audited`共同组成Teacher的80%采样池；每次先选择Static或Teacher来源，再选择task/trajectory，最后选择其中的SchedulerStep，防止步骤更多的长轨迹天然获得更高训练权重。
@@ -308,7 +307,7 @@ sft:
 4. 注入q/k/v/o LoRA并验证目标层命中
 5. 读取Train与Validation SFT数据
 6. 拒绝超过32K的样本
-7. 按长度分桶并执行5:5→2:8来源采样
+7. 按长度分桶并在每个Epoch执行固定2:8来源采样
 8. 在同一valid_actions Mask上计算下一动作Cross-Entropy
 9. 每个Epoch运行Validation
 10. 保存最佳Adapter、Tokenizer、配置和指标

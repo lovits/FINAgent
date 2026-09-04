@@ -42,6 +42,7 @@ class SFTTrainConfig:
     lora_rank: int = 16
     lora_alpha: int = 32
     lora_dropout: float = 0.05
+    teacher_probability: float = 0.8
     seed: int = 42
 
     @classmethod
@@ -78,7 +79,7 @@ def train(config: SFTTrainConfig) -> dict[str, float]:
     )
     sampler = HierarchicalSourceSampler(
         train_data.rows,
-        total_epochs=config.epochs,
+        teacher_probability=config.teacher_probability,
         seed=config.seed,
     )
     collator = MaskedActionCollator(tokenizer, max_length=config.max_length)
