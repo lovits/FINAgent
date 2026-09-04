@@ -147,17 +147,17 @@ def _manifest(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-dir", required=True)
+    parser.add_argument("--base-dir")
     parser.add_argument("--paired-root", action="append", required=True)
-    parser.add_argument("--teacher-only-root", action="append", required=True)
+    parser.add_argument("--teacher-only-root", action="append", default=[])
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
-    base = Path(args.base_dir)
+    base = Path(args.base_dir) if args.base_dir else None
     values = extend_sft_sources(
-        TrajectoryStore(base / "static.accepted.jsonl").load(),
-        TrajectoryStore(base / "teacher-paired.accepted.jsonl").load(),
-        TrajectoryStore(base / "teacher-audited.accepted.jsonl").load(),
-        load_comparisons(base / "comparisons.jsonl"),
+        TrajectoryStore(base / "static.accepted.jsonl").load() if base else [],
+        TrajectoryStore(base / "teacher-paired.accepted.jsonl").load() if base else [],
+        TrajectoryStore(base / "teacher-audited.accepted.jsonl").load() if base else [],
+        load_comparisons(base / "comparisons.jsonl") if base else [],
         load_accepted_roots(args.paired_root),
         load_accepted_roots(args.teacher_only_root),
     )
