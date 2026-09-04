@@ -594,6 +594,12 @@ Teacher与Static路径完全相同仍是有效轨迹，但重复的状态—动�
 
 ## 13. SFT-ready数据
 
+### 13.0 100条轨迹采集口径
+
+简历项目的首个完整批次固定汇总100条审核通过的轨迹：20条Static、80条Teacher。其中20个任务是Static/Teacher配对任务，60个任务是Teacher-only，共80个不重复任务。采集过程可以多跑少量替补任务，但汇总器最终只选取精确20:80；rejected/failed只保留作审计证据，不进入SFT。
+
+如果60条原始Train任务不足，从Reserve按场景家族轮转抽样，在本次采集计划中复制为Train，同时保留`source_split=reserve`。不修改原始300任务池，不使用Validation任务。
+
 ### 13.1 样本结构
 
 ```json

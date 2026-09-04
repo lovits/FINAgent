@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
@@ -44,16 +45,24 @@ class OpenRouterTeacherGateway:
         timeout_seconds: float = 90.0,
         temperature: float = 0.2,
         seed: int | None = None,
+        transport_attempts: int = 2,
+        retry_delay_seconds: float = 1.0,
         transport: Callable[..., Any] | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
         environ: Mapping[str, str] | None = None,
     ):
+        if transport_attempts < 1 or retry_delay_seconds < 0:
+            raise ValueError("invalid Teacher transport retry configuration")
         self.model = model
         self.api_key_env = api_key_env
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
         self.seed = seed
+        self.transport_attempts = transport_attempts
+        self.retry_delay_seconds = retry_delay_seconds
         self._transport = transport or requests.post
+        self._sleeper = sleeper
         self._environ = os.environ if environ is None else environ
 
     def _api_key(self) -> str:
@@ -88,26 +97,7 @@ class OpenRouterTeacherGateway:
         }
         if self.seed is not None:
             payload["seed"] = self.seed
-        try:
-            response = self._transport(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._api_key()}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            body = response.json()
-        except requests.HTTPError as exc:
-            status = getattr(exc.response, "status_code", "unknown")
-            message = self._http_error_message(exc.response)
-            raise TeacherGatewayError(
-                f"Teacher request failed with HTTP {status}: {message}"
-            ) from exc
-        except requests.RequestException as exc:
-            raise TeacherGatewayError(f"Teacher request failed: {type(exc).__name__}") from exc
+        body = self._request_body(payload)
 
         try:
             raw_output = body["choices"][0]["message"]["content"]
@@ -124,6 +114,34 @@ class OpenRouterTeacherGateway:
         if action not in valid_actions:
             raise TeacherOutputError("action_not_in_valid_actions", raw_output)
         return action, raw_output
+
+    def _request_body(self, payload: Mapping[str, object]) -> object:
+        for attempt in range(self.transport_attempts):
+            try:
+                response = self._transport(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._api_key()}",
+                        "Content-Type": "application/json",
+                    },
+                    json=dict(payload),
+                    timeout=self.timeout_seconds,
+                )
+                response.raise_for_status()
+                return response.json()
+            except requests.HTTPError as exc:
+                status = getattr(exc.response, "status_code", "unknown")
+                message = self._http_error_message(exc.response)
+                raise TeacherGatewayError(
+                    f"Teacher request failed with HTTP {status}: {message}"
+                ) from exc
+            except requests.RequestException as exc:
+                if attempt + 1 == self.transport_attempts:
+                    raise TeacherGatewayError(
+                        f"Teacher request failed: {type(exc).__name__}"
+                    ) from exc
+                self._sleeper(self.retry_delay_seconds)
+        raise AssertionError("Teacher transport retry loop did not terminate")
 
     @staticmethod
     def _http_error_message(response: Any) -> str:

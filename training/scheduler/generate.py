@@ -230,6 +230,30 @@ def _runtime_config() -> dict[str, Any]:
     return scheduler_runtime_config()
 
 
+def _select_task(tasks: list[dict[str, Any]], task_id: str | None) -> list[dict[str, Any]]:
+    if task_id is None:
+        return tasks
+    selected = [task for task in tasks if task["task_id"] == task_id]
+    if len(selected) != 1:
+        raise ValueError(f"expected one task for {task_id}, found {len(selected)}")
+    return selected
+
+
+def _write_single_report(output_dir: str | Path, tasks: list[dict[str, Any]]) -> None:
+    if len(tasks) != 1:
+        raise ValueError("--write-report requires exactly one selected task")
+    output = Path(output_dir)
+    accepted = TrajectoryStore(output / "accepted.jsonl").load()
+    if not accepted:
+        return
+    if len(accepted) != 1:
+        raise ValueError(f"expected one accepted trajectory, found {len(accepted)}")
+    from tradingagents.reporting import write_report_tree
+
+    final_state = accepted[0].steps[-1].state_before
+    write_report_tree(final_state, str(tasks[0]["ticker"]), output / "report")
+
+
 def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser()
@@ -237,13 +261,15 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--mode", choices=("static", "teacher"), required=True)
     parser.add_argument("--split", default="train")
+    parser.add_argument("--task-id")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--write-report", action="store_true")
     parser.add_argument("--run-id")
     parser.add_argument("--memory-log")
     args = parser.parse_args()
 
-    tasks = load_tasks(args.tasks, split=args.split)
+    tasks = _select_task(load_tasks(args.tasks, split=args.split), args.task_id)
     if args.limit is not None:
         tasks = tasks[: args.limit]
     run_id = args.run_id or datetime.now(UTC).strftime(f"{args.mode}-%Y%m%dT%H%M%SZ")
@@ -256,6 +282,8 @@ def main() -> None:
         resume=args.resume,
         memory_log_path=args.memory_log,
     )
+    if args.write_report:
+        _write_single_report(args.output_dir, tasks)
     print(json.dumps(counts, sort_keys=True))
 
 

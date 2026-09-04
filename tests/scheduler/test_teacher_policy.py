@@ -106,3 +106,27 @@ def test_gateway_preserves_sanitized_provider_error() -> None:
     )
     with pytest.raises(TeacherGatewayError, match="HTTP 403.*provider terms"):
         gateway.request([], (SchedulerAction.MARKET,))
+
+
+def test_gateway_retries_one_transient_transport_error() -> None:
+    calls = []
+    delays = []
+
+    def transport(*args, **kwargs):
+        calls.append((args, kwargs))
+        if len(calls) == 1:
+            raise requests.exceptions.SSLError("temporary handshake failure")
+        return _Response(json.dumps({"action": "<ACT_MARKET>"}))
+
+    gateway = OpenRouterTeacherGateway(
+        environ={"OPENROUTER_API_KEY": "test-only"},
+        transport=transport,
+        sleeper=delays.append,
+        retry_delay_seconds=0.25,
+    )
+
+    action, _ = gateway.request([], (SchedulerAction.MARKET,))
+
+    assert action is SchedulerAction.MARKET
+    assert len(calls) == 2
+    assert delays == [0.25]

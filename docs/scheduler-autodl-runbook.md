@@ -181,6 +181,47 @@ Validation：
   --output data/scheduler/v1/paired/validation.jsonl
 ```
 
+### 9.1 并行生成100条完整训练轨迹
+
+100条指审核通过的完整轨迹，不是100个SchedulerStep。结构为20条Static和80条Teacher：20个配对任务同时运行Static/Teacher，另外60个任务只运行Teacher。因此需要80个不重复的任务。
+
+从`reserve`复制任务时只把这一份采集计划标记为Train，原始`pool_300.jsonl`和12条Validation不变：
+
+```bash
+.venv/bin/python -m training.scheduler.collection_plan \
+  --pool data/scheduler/v1/tasks/pool_300.jsonl \
+  --output data/scheduler/v1/collection/sft100/tasks.jsonl \
+  --paired-count 20 \
+  --teacher-only-count 60 \
+  --source-split reserve
+```
+
+用独立子进程并行生成，每个任务保存自己的轨迹、审核结果、报告和日志：
+
+```bash
+.venv/bin/python -m training.scheduler.batch_generate \
+  --repo . \
+  --tasks data/scheduler/v1/collection/sft100/tasks.jsonl \
+  --output-dir data/scheduler/v1/collection/sft100/runs \
+  --run-prefix sft100-v1 \
+  --max-workers 12
+```
+
+`batch_manifest.json`持续记录已完成、待运行、accepted、rejected和failed数量。如果有拒绝轨迹，用`collection_plan --offset ...`从未使用的Reserve任务中生成小批量替补；不把拒绝轨迹改名为通过数据。
+
+### 9.2 汇总为精确20:80轨迹源
+
+```bash
+.venv/bin/python -m training.scheduler.assemble_sft_sources \
+  --paired-root data/scheduler/v1/collection/sft100/runs/paired \
+  --teacher-only-root data/scheduler/v1/collection/sft100/runs/teacher-only \
+  --output-dir data/scheduler/v1/sft100/sources \
+  --paired-task-target 20 \
+  --teacher-trajectory-target 80
+```
+
+汇总器只读取`accepted.jsonl`，抽取20条Static、20条配对Teacher和60条Teacher-only，同时生成`comparisons.jsonl`。数量不足时直接报错，不会用失败数据补数。
+
 ## 10. 在AutoDL下载Qwen3-1.7B
 
 ```bash
@@ -198,6 +239,21 @@ cd /root/autodl-tmp/TradingAgents-RL
 ```
 
 ## 11. 构造SFT数据
+
+100条轨迹采集方案使用：
+
+```bash
+.venv/bin/python -m training.scheduler.prepare_sft \
+  --static data/scheduler/v1/sft100/sources/static.accepted.jsonl \
+  --teacher data/scheduler/v1/sft100/sources/teacher-paired.accepted.jsonl \
+  --teacher-audited data/scheduler/v1/sft100/sources/teacher-audited.accepted.jsonl \
+  --comparisons data/scheduler/v1/sft100/sources/comparisons.jsonl \
+  --output data/scheduler/v1/sft/train.jsonl \
+  --model-id /root/autodl-tmp/models/Qwen3-1.7B \
+  --max-tokens 32768
+```
+
+每个合法SchedulerStep会变成一条SFT样本。完整报告和已执行Agent的结果位于`input_text`中；唯一监督标签是`target_action`，即下一个应调用的Agent。转换器会去重、拒绝超过32K Token的输入，并保留`task_id/trajectory_id/step_id/source`用于追溯。
 
 Train：
 

@@ -4,7 +4,7 @@ import pytest
 
 from tradingagents.scheduler.trajectory import SchedulerStep, SchedulerTrajectory
 from training.scheduler.environment import EnvironmentRunResult
-from training.scheduler.generate import generate_trajectories, load_tasks
+from training.scheduler.generate import _select_task, generate_trajectories, load_tasks
 
 
 def _complete_trajectory(identifier: str, mode: str, run_id: str) -> SchedulerTrajectory:
@@ -158,3 +158,11 @@ def test_load_tasks_filters_split(tmp_path) -> None:
         json.dumps(_task()) + "\n" + json.dumps({**_task(), "task_id": "task-2", "split": "validation"}) + "\n"
     )
     assert [task["task_id"] for task in load_tasks(target, split="train")] == ["task-1"]
+
+
+def test_select_task_requires_exact_match() -> None:
+    tasks = [_task(), {**_task(), "task_id": "task-2"}]
+
+    assert _select_task(tasks, "task-2")[0]["task_id"] == "task-2"
+    with pytest.raises(ValueError, match="expected one task"):
+        _select_task(tasks, "missing")
