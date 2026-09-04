@@ -598,7 +598,7 @@ Teacher与Static路径完全相同仍是有效轨迹，但重复的状态—动�
 
 ```json
 {
-  "schema_version": "scheduler-sft-v1",
+  "schema_version": "scheduler-sft-v2",
   "sample_id": "...",
   "task_id": "...",
   "trajectory_id": "...",
@@ -614,7 +614,9 @@ Teacher与Static路径完全相同仍是有效轨迹，但重复的状态—动�
 ### 13.2 转换规则
 
 - Static只转换`accepted`轨迹；
-- Teacher只转换`teacher_verified`轨迹；
+- 配对Teacher只转换`teacher_verified`轨迹；
+- 明确位于Teacher-only输入集且结构审核通过的轨迹转换为`teacher_audited`；
+- `teacher_audited`任务不得与任何配对Teacher任务重叠；
 - 每个合法SchedulerStep转换为一条样本；
 - Teacher纠正成功只保留第二次合法动作；
 - 超过32,768 Token的样本标记`context_overflow`并拒绝；
@@ -626,13 +628,14 @@ Teacher与Static路径完全相同仍是有效轨迹，但重复的状态—动�
 
 ```json
 {
-  "schema_version": "scheduler-sft-manifest-v1",
+  "schema_version": "scheduler-sft-manifest-v2",
   "task_split": "train",
   "sample_count": 0,
   "task_count": 0,
   "source_counts": {
     "static": 0,
-    "teacher_verified": 0
+    "teacher_verified": 0,
+    "teacher_audited": 0
   },
   "action_counts": {},
   "length_percentiles": {

@@ -205,6 +205,7 @@ Train：
 .venv/bin/python -m training.scheduler.prepare_sft \
   --static data/scheduler/v1/static/train/accepted.jsonl \
   --teacher data/scheduler/v1/teacher/train/accepted.jsonl \
+  --teacher-audited data/scheduler/v1/teacher/train-only/accepted.jsonl \
   --comparisons data/scheduler/v1/paired/train.jsonl \
   --output data/scheduler/v1/sft/train.jsonl \
   --model-id /root/autodl-tmp/models/Qwen3-1.7B

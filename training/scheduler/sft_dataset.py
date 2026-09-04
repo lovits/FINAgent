@@ -27,11 +27,18 @@ class SchedulerSFTDataset(Dataset):
                     continue
                 try:
                     row = json.loads(line)
-                    if row["schema_version"] != "scheduler-sft-v1":
+                    if row["schema_version"] not in {
+                        "scheduler-sft-v1",
+                        "scheduler-sft-v2",
+                    }:
                         raise ValueError("unsupported schema_version")
                     if row["target_action"] not in row["valid_actions"]:
                         raise ValueError("target_action is not valid")
-                    if row["source"] not in {"static", "teacher_verified"}:
+                    if row["source"] not in {
+                        "static",
+                        "teacher_verified",
+                        "teacher_audited",
+                    }:
                         raise ValueError("unknown source")
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                     raise ValueError(
@@ -94,7 +101,8 @@ class HierarchicalSourceSampler(Sampler[int]):
     def _group(rows: Sequence[dict[str, Any]]):
         groups = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for index, row in enumerate(rows):
-            groups[row["source"]][row["task_id"]][row["trajectory_id"]].append(index)
+            source = "static" if row["source"] == "static" else "teacher"
+            groups[source][row["task_id"]][row["trajectory_id"]].append(index)
         return groups
 
     def set_epoch(self, epoch: int) -> None:
@@ -113,7 +121,7 @@ class HierarchicalSourceSampler(Sampler[int]):
                 if global_draw < warmup_draws
                 else self.teacher_probability
             )
-            source = "teacher_verified" if rng.random() < teacher_probability else "static"
+            source = "teacher" if rng.random() < teacher_probability else "static"
             if source not in self.groups:
                 source = next(iter(self.groups))
             tasks = self.groups[source]

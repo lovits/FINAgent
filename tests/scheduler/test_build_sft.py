@@ -67,6 +67,19 @@ def test_builds_only_verified_teacher_examples_and_rejects_overflow() -> None:
     assert missing == []
 
 
+def test_builds_structurally_audited_unpaired_teacher_examples() -> None:
+    trajectory = _trajectory("teacher-audited-1", "teacher")
+    examples, overflow = build_sft_examples(
+        [trajectory],
+        source="teacher_audited",
+        token_counter=len,
+    )
+
+    assert len(examples) == 2
+    assert {example.source for example in examples} == {"teacher_audited"}
+    assert overflow == 0
+
+
 def test_verified_teacher_ids_uses_pair_status() -> None:
     comparison = PairComparison(
         "task-1",

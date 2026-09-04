@@ -680,12 +680,12 @@ SchedulerContext
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `schema_version` | string | `scheduler-sft-v1` |
+| `schema_version` | string | `scheduler-sft-v2` |
 | `sample_id` | string | 唯一样本ID |
 | `task_id` | string | split与统计 |
 | `trajectory_id` | string | 回溯轨迹 |
 | `step_id` | integer | 回溯步骤 |
-| `source` | enum | static/teacher_verified |
+| `source` | enum | static/teacher_verified/teacher_audited |
 | `input_text` | string | Canonical模型输入 |
 | `valid_actions` | string[] | 分类Mask |
 | `target_action` | string | 监督动作 |

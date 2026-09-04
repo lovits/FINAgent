@@ -40,6 +40,17 @@ def test_dataset_validates_schema_and_target(tmp_path) -> None:
     with pytest.raises(ValueError, match="target_action"):
         SchedulerSFTDataset(target)
 
+    target.write_text(
+        json.dumps(
+            {
+                **_row(0, source="teacher_audited"),
+                "schema_version": "scheduler-sft-v2",
+            }
+        )
+        + "\n"
+    )
+    assert len(SchedulerSFTDataset(target)) == 1
+
 
 def test_hierarchical_sampler_does_not_let_long_trajectory_dominate() -> None:
     rows = [_row(index, task_id="long") for index in range(100)]
@@ -47,6 +58,18 @@ def test_hierarchical_sampler_does_not_let_long_trajectory_dominate() -> None:
     sampler = HierarchicalSourceSampler(rows, teacher_probability=0.0)
     selected_tasks = Counter(rows[index]["task_id"] for index in sampler)
     assert selected_tasks["short"] > 25
+
+
+def test_hierarchical_sampler_groups_both_teacher_sources_together() -> None:
+    rows = [
+        _row(0, source="static", task_id="static"),
+        _row(1, source="teacher_verified", task_id="verified"),
+        _row(2, source="teacher_audited", task_id="audited"),
+    ]
+    sampler = HierarchicalSourceSampler(rows)
+
+    assert set(sampler.groups) == {"static", "teacher"}
+    assert set(sampler.groups["teacher"]) == {"verified", "audited"}
 
 
 def test_sft_train_and_validation_tasks_must_be_disjoint() -> None:

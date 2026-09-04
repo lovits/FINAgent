@@ -1,4 +1,4 @@
-"""Build one split-aware SFT JSONL from accepted Static and verified Teacher traces."""
+"""Build split-aware SFT JSONL from Static and audited Teacher traces."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from .pair_dataset import load_comparisons
 def prepare_sft_dataset(
     static: Iterable[SchedulerTrajectory],
     teacher: Iterable[SchedulerTrajectory],
+    teacher_audited: Iterable[SchedulerTrajectory] = (),
     *,
     verified_ids: set[str],
     token_counter: Callable[[str], int],
@@ -29,7 +30,21 @@ def prepare_sft_dataset(
 ) -> tuple[list[SFTExample], int]:
     static = list(static)
     teacher = list(teacher)
-    source_task_split(static, teacher)
+    teacher_audited = list(teacher_audited)
+    source_task_split(static, teacher, teacher_audited)
+    paired_teacher_tasks = {
+        (trajectory.task_id, trajectory.data_snapshot_id) for trajectory in teacher
+    }
+    audited_teacher_tasks = {
+        (trajectory.task_id, trajectory.data_snapshot_id)
+        for trajectory in teacher_audited
+    }
+    overlap = paired_teacher_tasks & audited_teacher_tasks
+    if overlap:
+        raise ValueError(
+            "teacher_audited contains tasks already present in paired Teacher "
+            f"data: {len(overlap)}"
+        )
     static_examples, static_overflow = build_sft_examples(
         static,
         source="static",
@@ -43,18 +58,27 @@ def prepare_sft_dataset(
         max_tokens=max_tokens,
         verified_teacher_ids=verified_ids,
     )
-    return _deduplicate([*static_examples, *teacher_examples]), (
-        static_overflow + teacher_overflow
+    audited_examples, audited_overflow = build_sft_examples(
+        teacher_audited,
+        source="teacher_audited",
+        token_counter=token_counter,
+        max_tokens=max_tokens,
+    )
+    return _deduplicate(
+        [*static_examples, *teacher_examples, *audited_examples]
+    ), (
+        static_overflow + teacher_overflow + audited_overflow
     )
 
 
 def source_task_split(
     static: Iterable[SchedulerTrajectory],
     teacher: Iterable[SchedulerTrajectory],
+    teacher_audited: Iterable[SchedulerTrajectory] = (),
 ) -> str:
     splits = {
         trajectory.provenance.get("task_split")
-        for trajectory in [*static, *teacher]
+        for trajectory in [*static, *teacher, *teacher_audited]
     }
     if not splits:
         raise ValueError("SFT sources are empty")
@@ -94,6 +118,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--static", required=True)
     parser.add_argument("--teacher", required=True)
+    parser.add_argument("--teacher-audited")
     parser.add_argument("--comparisons", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--model-id", default="Qwen/Qwen3-1.7B")
@@ -103,16 +128,27 @@ def main() -> None:
 
     static = TrajectoryStore(args.static).load()
     teacher = TrajectoryStore(args.teacher).load()
+    teacher_audited = (
+        TrajectoryStore(args.teacher_audited).load()
+        if args.teacher_audited
+        else []
+    )
     comparisons = load_comparisons(args.comparisons)
-    task_split = source_task_split(static, teacher)
+    task_split = source_task_split(static, teacher, teacher_audited)
     examples, overflow = prepare_sft_dataset(
         static,
         teacher,
+        teacher_audited,
         verified_ids=verified_teacher_ids(comparisons),
         token_counter=qwen_token_counter(args.model_id, args.revision),
         max_tokens=args.max_tokens,
     )
-    run_ids = sorted({trajectory.run_id for trajectory in [*static, *teacher]})
+    run_ids = sorted(
+        {
+            trajectory.run_id
+            for trajectory in [*static, *teacher, *teacher_audited]
+        }
+    )
     manifest = write_sft_dataset(
         examples,
         args.output,

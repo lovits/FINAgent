@@ -16,8 +16,8 @@ from tradingagents.scheduler.trajectory import SchedulerTrajectory
 
 from .pair import PairComparison
 
-SFT_SCHEMA_VERSION = "scheduler-sft-v1"
-SFTSource = Literal["static", "teacher_verified"]
+SFT_SCHEMA_VERSION = "scheduler-sft-v2"
+SFTSource = Literal["static", "teacher_verified", "teacher_audited"]
 
 
 @dataclass(frozen=True)
@@ -122,7 +122,7 @@ def _manifest(
 ) -> dict[str, Any]:
     lengths = sorted(example.input_token_count for example in examples)
     return {
-        "schema_version": "scheduler-sft-manifest-v1",
+        "schema_version": "scheduler-sft-manifest-v2",
         "task_split": task_split,
         "sample_count": len(examples),
         "task_count": len({example.task_id for example in examples}),

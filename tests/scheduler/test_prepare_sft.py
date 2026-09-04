@@ -56,6 +56,37 @@ def test_reports_overflow_from_both_sources() -> None:
     assert overflow == 2
 
 
+def test_includes_audited_teacher_only_tasks_as_separate_source() -> None:
+    audited = _trajectory("teacher-audited-1", "teacher")
+    audited.task_id = "task-2"
+    audited.steps[0].serialized_state = "audited teacher prompt"
+
+    examples, overflow = prepare_sft_dataset(
+        [_trajectory("static-1", "static")],
+        [_trajectory("teacher-1", "teacher")],
+        [audited],
+        verified_ids={"teacher-1"},
+        token_counter=len,
+    )
+
+    assert {example.source for example in examples} == {
+        "static",
+        "teacher_audited",
+    }
+    assert overflow == 0
+
+
+def test_rejects_teacher_only_source_that_overlaps_paired_task() -> None:
+    with pytest.raises(ValueError, match="already present in paired Teacher"):
+        prepare_sft_dataset(
+            [_trajectory("static-1", "static")],
+            [_trajectory("teacher-1", "teacher")],
+            [_trajectory("teacher-audited-1", "teacher")],
+            verified_ids={"teacher-1"},
+            token_counter=len,
+        )
+
+
 def test_rejects_conflicting_labels_for_identical_input() -> None:
     static = _trajectory("static-1", "static")
     teacher = _trajectory("teacher-1", "teacher")
