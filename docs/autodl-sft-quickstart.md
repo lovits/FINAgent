@@ -26,7 +26,7 @@ cd /root/autodl-tmp/TradingAgents-RL
 bash scripts/autodl_sft_setup.sh
 ```
 
-脚本会校验模型分片、1683条Train和110条Validation，并安装`.[scheduler-train]`依赖。
+脚本会校验模型分片、1683条Train和110条Validation，创建可复用基础镜像PyTorch的虚拟环境，并安装`.[scheduler-train]`依赖。
 
 ## 3. GPU模式运行显存Smoke
 

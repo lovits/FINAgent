@@ -26,7 +26,7 @@ for path in "${required_files[@]}"; do
 done
 
 if [[ ! -x .venv/bin/python ]]; then
-  "$PYTHON_BIN" -m venv .venv
+  "$PYTHON_BIN" -m venv --system-site-packages .venv
 fi
 
 .venv/bin/python -m pip install --upgrade pip
