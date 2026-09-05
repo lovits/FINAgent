@@ -8,6 +8,21 @@ import pytest
 from training.scheduler.sft_benchmark import limit_expert_requests, validate_tasks, wait_for_training
 
 
+def test_gpu_budget_is_per_process_and_leaves_headroom(monkeypatch):
+    from types import SimpleNamespace
+    from training.scheduler.gpu_lease import set_gpu_budget
+
+    fractions = []
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr("torch.cuda.get_device_properties", lambda _: SimpleNamespace(total_memory=24 * 1024**3))
+    monkeypatch.setattr("torch.cuda.set_per_process_memory_fraction", lambda fraction, device: fractions.append(fraction))
+    assert set_gpu_budget(14) == pytest.approx(14 / 24)
+    assert set_gpu_budget(7) == pytest.approx(7 / 24)
+    assert sum(fractions) == pytest.approx(21 / 24)
+    with pytest.raises(ValueError):
+        set_gpu_budget(24)
+
+
 def test_gpu_lease_excludes_other_handles_and_releases(tmp_path):
     fcntl = pytest.importorskip("fcntl")
     from training.scheduler.gpu_lease import gpu_lease

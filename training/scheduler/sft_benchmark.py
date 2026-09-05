@@ -16,7 +16,7 @@ from tradingagents.scheduler.store import write_json_atomic
 from .auto_review import AutomaticReviewer
 from .evaluate import evaluate_trajectories
 from .generate import load_tasks
-from .gpu_lease import gpu_lease
+from .gpu_lease import gpu_lease, set_gpu_budget
 from .model import SchedulerModelConfig, load_scheduler_model
 from .runtime_config import scheduler_runtime_config
 from .train_with_evaluation import run_task
@@ -153,13 +153,7 @@ def main():
         "checkpoint_root": args.checkpoint_root, "base_model": args.base_model})
     os.environ["TRADINGAGENTS_OHLCV_SNAPSHOT_DIR"] = str(Path(args.snapshot_dir).resolve())
     if args.share_gpu:
-        if not torch.cuda.is_available():
-            raise RuntimeError("GPU evaluation requires CUDA")
-        total = torch.cuda.get_device_properties(0).total_memory
-        fraction = args.gpu_budget_gib * 1024**3 / total
-        if not 0 < fraction < 1:
-            raise ValueError("GPU budget must be smaller than total device memory")
-        torch.cuda.set_per_process_memory_fraction(fraction)
+        set_gpu_budget(args.gpu_budget_gib)
     else:
         wait_for_training(Path(args.training_status), output)
     torch.set_num_threads(2)

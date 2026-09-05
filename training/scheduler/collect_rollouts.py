@@ -231,10 +231,15 @@ def _validate_static_reference(
 
 
 def main() -> None:
+    from .gpu_lease import set_gpu_budget
+
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
+    parser.add_argument("--gpu-budget-gib", type=float, default=14.0)
     args = parser.parse_args()
+    set_gpu_budget(args.gpu_budget_gib)
+    print(json.dumps({"event": "gpu_budget", "gib": args.gpu_budget_gib}), flush=True)
     print(json.dumps(collect(RolloutConfig.from_json(args.config)), sort_keys=True))
 
 

@@ -155,12 +155,15 @@ def train(config: GRPOTrainConfig) -> dict[str, float]:
 
 
 def main() -> None:
-    from .gpu_lease import gpu_lease
+    from .gpu_lease import gpu_lease, set_gpu_budget
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
+    parser.add_argument("--gpu-budget-gib", type=float, default=14.0)
     args = parser.parse_args()
     with gpu_lease():
+        set_gpu_budget(args.gpu_budget_gib)
+        print(json.dumps({"event": "gpu_budget", "gib": args.gpu_budget_gib}), flush=True)
         print(json.dumps(train(GRPOTrainConfig.from_json(args.config)), sort_keys=True))
 
 
