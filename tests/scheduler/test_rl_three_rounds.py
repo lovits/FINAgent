@@ -18,10 +18,11 @@ def test_plan_requires_eight_distinct_training_tasks(tmp_path):
 
 
 @pytest.mark.parametrize("usable", [True, False])
-def test_three_rounds_use_previous_model_and_skip_updates_without_reward_groups(monkeypatch, tmp_path, usable):
+def test_configured_rounds_use_previous_model_and_skip_updates_without_reward_groups(monkeypatch, tmp_path, usable):
     monkeypatch.setenv("TRADINGAGENTS_OHLCV_SNAPSHOT_DIR", str(tmp_path))
     plan = {"output_dir": str(tmp_path / "run"), "snapshot_dir": str(tmp_path),
-            "initial_adapter": "sft-six", "train_tasks": "eight", "base_model": "tiny"}
+            "initial_adapter": "sft-six", "train_tasks": "eight", "base_model": "tiny",
+            "rounds": 5}
     monkeypatch.setattr("training.scheduler.rl_three_rounds.validate_plan", lambda p: [])
     events = []
 
@@ -45,7 +46,7 @@ def test_three_rounds_use_previous_model_and_skip_updates_without_reward_groups(
     monkeypatch.setattr("torch.cuda.is_available", lambda: True)
     if usable:
         run(plan)
-        assert events == ["collect_rollouts", "train_grpo"] * 3
+        assert events == ["collect_rollouts", "train_grpo"] * 5
     else:
         with pytest.raises(RuntimeError, match="no parameter update"):
             run(plan)

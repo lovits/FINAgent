@@ -1,4 +1,4 @@
-"""Three sequential on-policy RL training rounds with independent checkpoints."""
+"""Sequential on-policy RL training rounds with independent checkpoints."""
 import argparse
 from dataclasses import asdict
 import json
@@ -49,19 +49,22 @@ def run(plan, *, resume=False):
         write_json_atomic(output / "plan.json", plan)
     os.environ["TRADINGAGENTS_OHLCV_SNAPSHOT_DIR"] = str(Path(plan["snapshot_dir"]).resolve())
     initial = plan["initial_adapter"]
+    total_rounds = int(plan.get("rounds", 5))
+    if total_rounds < 1:
+        raise ValueError("rounds must be positive")
     active = initial
     start_round = 1
-    for completed_round in range(1, 4):
+    for completed_round in range(1, total_rounds + 1):
         checkpoint = _completed_checkpoint(output, completed_round)
         if checkpoint is None:
             break
         active = str(checkpoint)
         start_round = completed_round + 1
-    if start_round > 3:
-        raise ValueError("all three GRPO rounds are already complete")
+    if start_round > total_rounds:
+        raise ValueError("all GRPO rounds are already complete")
     number = start_round
     try:
-        for number in range(start_round, 4):
+        for number in range(start_round, total_rounds + 1):
             directory = output / f"round-{number}"
             directory.mkdir(exist_ok=resume and number == start_round)
             write_json_atomic(output / "status.json", {"status": "running", "round": number, "stage": "rollout"})
@@ -92,7 +95,9 @@ def run(plan, *, resume=False):
                 "status": "running", "round": number,
                 "stage": "checkpoint_saved", "checkpoint": active,
             })
-        write_json_atomic(output / "status.json", {"status": "completed", "rounds": 3, "final_adapter": active})
+        write_json_atomic(output / "status.json", {
+            "status": "completed", "rounds": total_rounds, "final_adapter": active,
+        })
     except BaseException as exc:
         write_json_atomic(output / "status.json", {"status": "needs_attention", "round": number,
                           "error_type": type(exc).__name__, "error": str(exc)})
