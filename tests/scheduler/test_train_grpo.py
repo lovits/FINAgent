@@ -84,6 +84,8 @@ def test_tiny_grpo_entry_point_updates_and_saves_adapter(monkeypatch, tmp_path) 
 
     assert set(metrics) == {"loss", "policy_loss", "kl", "clip_fraction"}
     assert (tmp_path / "output" / "adapter_config.json").exists()
+    assert (tmp_path / "output" / "training-state.pt").exists()
+    assert (tmp_path / "output" / "progress.json").exists()
     manifest = json.loads(
         (tmp_path / "output" / "training_manifest.json").read_text()
     )

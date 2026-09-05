@@ -709,7 +709,15 @@ SchedulerContext
 | `reward_components` | object | Reward分量 |
 | `advantage` | number | 组内相对优势 |
 
-### 11.7 `RewardBreakdown`
+### 11.7 自动评审与Reward
+
+当前主配置使用`AutomaticReviewer`：确定性结构审核后，以隐藏来源模式的文档输入请求固定大模型，按证据一致性、逻辑一致性、风险披露各评0—4分。每项必须提供可在原文中找到的引用；失败最多重试一次。
+
+`AutoReward`字段为`total`、`quality`、`completion`和`cost_penalty`。评审不可用不产生训练奖励，整个Rollout组写入跳过记录；旧`RewardBreakdown`仍保留给`static_agreement`实验使用。
+
+信用分配使用组内标准化的终局得分。`SchedulerGRPODataset`计算`loss_weight`，使Loss按组→轨迹→动作平均；该权重由实际轨迹长度计算，不接受外部数据自报权重。规则、奖励数值及可用性门控见[scheduler-training-design.md](scheduler-training-design.md#14-reward设计)。
+
+旧版`RewardBreakdown`字段：
 
 ```text
 total

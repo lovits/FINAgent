@@ -17,6 +17,6 @@
   "lora_rank": 16,
   "lora_alpha": 32,
   "lora_dropout": 0.05,
-  "teacher_probability": 0.8,
+  "cover_all_samples": true,
   "seed": 42
 }

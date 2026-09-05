@@ -128,3 +128,23 @@ def test_group_rollout_produces_four_scored_trajectories_and_rows() -> None:
     assert len(rows) == 8
     assert all(row["old_logprob"] == 0 for row in rows)
     assert all(row["ref_logprob"] == 0 for row in rows)
+
+
+def test_judge_failure_retains_raw_group_and_produces_no_fake_score():
+    import pytest
+
+    from training.scheduler.auto_review import ReviewUnavailable
+
+    raw = []
+
+    def unavailable(*args):
+        raise ReviewUnavailable("judge unavailable")
+
+    runner = GroupRolloutRunner(_Environment(), reward_scorer=unavailable, trajectory_sink=raw.append)
+    with pytest.raises(ReviewUnavailable):
+        runner.run_task({"task_id": "task-1", "ticker": "AAPL", "trade_date": "2026-01-05",
+                         "data_snapshot_id": "snapshot-1"}, active_policy=_ActivePolicy(),
+                        reference_policy=_ReferencePolicy(), static_reference=_static_reference(),
+                        run_id="group", base_seed=42)
+    assert len(raw) == 4
+    assert all(trajectory.reward is None for trajectory in raw)

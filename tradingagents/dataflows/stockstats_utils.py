@@ -152,6 +152,11 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     subsequent calls the cache is reused. Rows after curr_date are
     filtered out so backtests never see future prices.
     """
+    from .ohlcv_snapshot import read_ohlcv_snapshot
+    snapshot = read_ohlcv_snapshot(symbol, curr_date)
+    if snapshot is not None:
+        return snapshot
+
     # Resolve broker/forex symbols (XAUUSD+ -> GC=F) to Yahoo's convention,
     # then reject values that would escape the cache directory when
     # interpolated into the cache filename (e.g. ``../../tmp/x``).

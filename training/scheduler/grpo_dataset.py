@@ -20,6 +20,18 @@ class SchedulerGRPODataset(Dataset):
         self.path = Path(path)
         self.rows = self._load()
         self._validate_groups(expected_group_size)
+        self._assign_loss_weights()
+
+    def _assign_loss_weights(self) -> None:
+        groups = defaultdict(lambda: defaultdict(list))
+        for row in self.rows:
+            groups[row["rollout_group_id"]][row["trajectory_id"]].append(row)
+        for trajectories in groups.values():
+            for rows in trajectories.values():
+                # Uniform row sampling now estimates mean(group, trajectory, step).
+                weight = len(self.rows) / (len(groups) * len(trajectories) * len(rows))
+                for row in rows:
+                    row["loss_weight"] = weight
 
     def _load(self) -> list[dict[str, Any]]:
         rows = []
@@ -121,6 +133,7 @@ class GRPOCollator:
                 "old_logprobs": torch.tensor([row["old_logprob"] for row in rows]),
                 "ref_logprobs": torch.tensor([row["ref_logprob"] for row in rows]),
                 "advantages": torch.tensor([row["advantage"] for row in rows]),
+                "loss_weights": torch.tensor([row.get("loss_weight", 1.0) for row in rows]),
             }
         )
         return batch

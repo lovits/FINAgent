@@ -1,7 +1,7 @@
 {
   "train_path": "data/scheduler/v1/sft/train.jsonl",
   "validation_path": "data/scheduler/v1/sft/validation.jsonl",
-  "output_dir": "artifacts/scheduler/qwen3-1p7b/sft",
+  "output_dir": "artifacts/scheduler/qwen3-1p7b/sft-cycle-20260905",
   "base_model": "/root/autodl-tmp/models/Qwen3-1.7B",
   "base_revision": null,
   "tokenizer_revision": null,

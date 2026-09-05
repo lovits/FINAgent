@@ -48,17 +48,24 @@ def grpo_clipped_loss(
     *,
     clip_epsilon: float = 0.2,
     kl_beta: float = 0.01,
+    loss_weights=None,
 ) -> GRPOLossOutput:
     import torch
 
+    if loss_weights is None:
+        loss_weights = torch.ones_like(new_logprobs)
+    if loss_weights.shape != new_logprobs.shape or not bool(
+        (torch.isfinite(loss_weights) & (loss_weights > 0)).all()
+    ):
+        raise ValueError("invalid trajectory loss weights")
     ratio = torch.exp(new_logprobs - old_logprobs.detach())
     unclipped = ratio * advantages
     clipped_ratio = torch.clamp(ratio, 1 - clip_epsilon, 1 + clip_epsilon)
     clipped = clipped_ratio * advantages
-    policy_loss = -torch.minimum(unclipped, clipped).mean()
+    policy_loss = -(torch.minimum(unclipped, clipped) * loss_weights).mean()
 
     ref_delta = ref_logprobs.detach() - new_logprobs
-    kl = (torch.exp(ref_delta) - ref_delta - 1).mean()
+    kl = ((torch.exp(ref_delta) - ref_delta - 1) * loss_weights).mean()
     loss = policy_loss + kl_beta * kl
     clip_fraction = ((ratio - 1).abs() > clip_epsilon).float().mean()
     return GRPOLossOutput(loss, policy_loss, kl, clip_fraction)

@@ -80,7 +80,12 @@ def train(config: GRPOTrainConfig) -> dict[str, float]:
     model, optimizer, loader = accelerator.prepare(model, optimizer, loader)
     totals = {"loss": 0.0, "policy_loss": 0.0, "kl": 0.0, "clip_fraction": 0.0}
     steps = 0
+    updates = 0
     model.train()
+    # Rollout probabilities are measured without dropout; optimize the same policy.
+    for module in model.modules():
+        if isinstance(module, torch.nn.Dropout):
+            module.p = 0.0
     for _ in range(config.epochs):
         for batch in loader:
             with accelerator.accumulate(model):
@@ -104,12 +109,24 @@ def train(config: GRPOTrainConfig) -> dict[str, float]:
                     batch["advantages"],
                     clip_epsilon=config.clip_epsilon,
                     kl_beta=config.kl_beta,
+                    loss_weights=batch["loss_weights"],
                 )
+                if not bool(torch.isfinite(loss_output.loss)):
+                    raise FloatingPointError("non-finite GRPO loss")
                 accelerator.backward(loss_output.loss)
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), config.max_grad_norm)
                 optimizer.step()
                 optimizer.zero_grad()
+            if accelerator.sync_gradients:
+                updates += 1
+                progress = {"update": updates, "micro_steps": steps + 1,
+                            "loss": float(loss_output.loss.detach()),
+                            "policy_loss": float(loss_output.policy_loss.detach()),
+                            "kl": float(loss_output.kl.detach())}
+                if accelerator.is_main_process:
+                    write_json_atomic(Path(config.output_dir) / "progress.json", progress)
+                    print(json.dumps(progress), flush=True)
             for name in totals:
                 totals[name] += float(getattr(loss_output, name).detach())
             steps += 1
@@ -126,6 +143,10 @@ def train(config: GRPOTrainConfig) -> dict[str, float]:
             save_function=accelerator.save,
         )
         tokenizer.save_pretrained(destination)
+        torch.save({"optimizer": optimizer.state_dict(), "updates": updates,
+                    "micro_steps": steps, "torch_rng": torch.get_rng_state(),
+                    "cuda_rng": torch.cuda.get_rng_state_all(), "python_rng": random.getstate()},
+                   destination / "training-state.pt")
         write_json_atomic(
             destination / "training_manifest.json",
             {"config": asdict(config), "metrics": metrics},

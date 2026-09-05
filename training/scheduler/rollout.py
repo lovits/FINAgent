@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import random
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -16,7 +16,7 @@ from tradingagents.scheduler.trajectory import SchedulerTrajectory
 from .advantage import group_relative_advantages
 from .audit import audit_trajectory
 from .environment import EnvironmentRunResult
-from .reward import RewardBreakdown, RewardConfig, score_trajectory
+from .reward import RewardConfig, score_trajectory
 
 GRPO_SCHEMA_VERSION = "scheduler-grpo-v1"
 
@@ -36,7 +36,7 @@ class RolloutEnvironment(Protocol):
 @dataclass(frozen=True)
 class ScoredRollout:
     trajectory: SchedulerTrajectory
-    reward: RewardBreakdown
+    reward: Any
     advantage: float
 
 
@@ -47,12 +47,16 @@ class GroupRolloutRunner:
         *,
         group_size: int = 4,
         reward_config: RewardConfig | None = None,
+        reward_scorer: Callable | None = None,
+        trajectory_sink: Callable | None = None,
     ):
         if group_size < 2:
             raise ValueError("group_size must be at least two")
         self.environment = environment
         self.group_size = group_size
         self.reward_config = reward_config or RewardConfig()
+        self.reward_scorer = reward_scorer
+        self.trajectory_sink = trajectory_sink
 
     def run_task(
         self,
@@ -60,10 +64,12 @@ class GroupRolloutRunner:
         *,
         active_policy: SchedulerPolicy,
         reference_policy: ActionLogprobPolicy,
-        static_reference: SchedulerTrajectory,
+        static_reference: SchedulerTrajectory | None,
         run_id: str,
         base_seed: int,
     ) -> list[ScoredRollout]:
+        if static_reference is None and self.reward_scorer is None:
+            raise ValueError("Static-agreement reward requires a Static reference")
         policy = ReferenceScoredPolicy(active_policy, reference_policy)
         trajectories = []
         for index in range(self.group_size):
@@ -77,8 +83,11 @@ class GroupRolloutRunner:
             )
             audit_trajectory(result.trajectory)
             trajectories.append(result.trajectory)
+            if self.trajectory_sink is not None:
+                self.trajectory_sink(result.trajectory)
         rewards = [
-            score_trajectory(value, static_reference, config=self.reward_config)
+            self.reward_scorer(value, static_reference) if self.reward_scorer is not None
+            else score_trajectory(value, static_reference, config=self.reward_config)
             for value in trajectories
         ]
         advantages = group_relative_advantages([value.total for value in rewards])

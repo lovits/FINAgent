@@ -70,3 +70,20 @@ def test_grpo_dataset_rejects_non_zero_mean_credit(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="not zero-mean"):
         SchedulerGRPODataset(target, expected_group_size=2)
+
+
+def test_each_trajectory_has_equal_total_loss_weight_despite_length(tmp_path):
+    import torch
+
+    from training.scheduler.grpo_loss import grpo_clipped_loss
+
+    rows = [_row()] + [{**_row(), "trajectory_id": "long", "step_id": step,
+                       "advantage": -1.0} for step in range(3)]
+    path = tmp_path / "groups.jsonl"
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    dataset = SchedulerGRPODataset(path, expected_group_size=2)
+    weights = torch.tensor([row["loss_weight"] for row in dataset])
+    assert weights[0] == weights[1:].sum()
+    loss = grpo_clipped_loss(torch.zeros(4), torch.zeros(4), torch.zeros(4),
+                             torch.tensor([1., -1., -1., -1.]), loss_weights=weights)
+    assert float(loss.policy_loss) == pytest.approx(0, abs=1e-6)

@@ -13,6 +13,7 @@ from tradingagents.scheduler.hf_policy import load_shared_hf_scheduler_policies
 from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
 from tradingagents.scheduler.trajectory import SchedulerTrajectory
 
+from .auto_review import AutomaticReviewer, ReviewUnavailable
 from .environment import TradingAgentsSchedulerEnvironment
 from .generate import load_tasks
 from .profile import resolve_task_runtime, validate_shallow_runtime
@@ -38,6 +39,9 @@ class RolloutConfig:
     max_steps: int = 16
     limit: int | None = None
     seed: int = 42
+    reward_mode: str = "static_agreement"
+    judge_model: str = "z-ai/glm-5.3-flash"
+    expert_model: str = "z-ai/glm-5.3-flash"
 
     @classmethod
     def from_json(cls, path: str | Path) -> RolloutConfig:
@@ -46,10 +50,13 @@ class RolloutConfig:
 
 
 def collect(config: RolloutConfig) -> dict[str, int]:
+    if config.reward_mode not in {"automatic", "static_agreement"}:
+        raise ValueError("unknown reward_mode")
     tasks = load_tasks(config.tasks_path, split="train")
     if config.limit is not None:
         tasks = tasks[: config.limit]
-    static_values = TrajectoryStore(config.static_trajectories_path).load()
+    static_values = (TrajectoryStore(config.static_trajectories_path).load()
+                     if config.reward_mode == "static_agreement" else [])
     static_by_key = {
         (trajectory.task_id, trajectory.data_snapshot_id): trajectory
         for trajectory in static_values
@@ -57,6 +64,12 @@ def collect(config: RolloutConfig) -> dict[str, int]:
     runtime_config = scheduler_runtime_config(
         {
             "orchestration_mode": "learned",
+            "llm_provider": "openrouter",
+            "quick_think_llm": config.expert_model,
+            "deep_think_llm": config.expert_model,
+            "temperature": 0.0,
+            "max_debate_rounds": 1,
+            "max_risk_discuss_rounds": 1,
             "scheduler_base_model": config.base_model,
             "scheduler_base_revision": config.base_revision,
             "scheduler_max_context_tokens": config.max_context_tokens,
@@ -78,13 +91,18 @@ def collect(config: RolloutConfig) -> dict[str, int]:
         )
     trajectories = []
     rows = []
+    output = Path(config.output_dir)
+    raw_store = TrajectoryStore(output / "raw-trajectories.jsonl")
+    reviewer = AutomaticReviewer(config.judge_model) if config.reward_mode == "automatic" else None
+    skipped_groups = []
     for index, task in enumerate(tasks):
         task_config, selected_analysts = resolve_task_runtime(task, runtime_config)
         key = (task["task_id"], task.get("data_snapshot_id"))
-        if key not in static_by_key:
+        if config.reward_mode == "static_agreement" and key not in static_by_key:
             raise ValueError(f"missing Static reference for {key}")
-        static_reference = static_by_key[key]
-        _validate_static_reference(static_reference, task, selected_analysts)
+        static_reference = static_by_key.get(key)
+        if static_reference is not None:
+            _validate_static_reference(static_reference, task, selected_analysts)
         runner = GroupRolloutRunner(
             TradingAgentsSchedulerEnvironment(
                 task_config,
@@ -92,24 +110,39 @@ def collect(config: RolloutConfig) -> dict[str, int]:
             ),
             group_size=config.group_size,
             reward_config=reward_config,
+            reward_scorer=reviewer,
+            trajectory_sink=raw_store.append,
         )
-        scored = runner.run_task(
-            task,
-            active_policy=active,
-            reference_policy=reference,
-            static_reference=static_reference,
-            run_id=config.run_id,
-            base_seed=config.seed + index * config.group_size,
-        )
+        try:
+            scored = runner.run_task(
+                task, active_policy=active, reference_policy=reference,
+                static_reference=static_reference, run_id=config.run_id,
+                base_seed=config.seed + index * config.group_size,
+            )
+        except ReviewUnavailable:
+            skipped_groups.append({"task_id": task["task_id"], "reason": "review_or_environment_unavailable"})
+            continue
+        finally:
+            if reviewer is not None:
+                write_json_atomic(output / "quality_reviews.json", reviewer.reviews)
+                write_json_atomic(output / "skipped_groups.json", {"groups": skipped_groups})
+        if reviewer is not None and all(value.advantage == 0 for value in scored):
+            skipped_groups.append({"task_id": task["task_id"], "reason": "zero_group_reward_variance"})
+            continue
+        if any(not value.trajectory.steps for value in scored):
+            skipped_groups.append({"task_id": task["task_id"], "reason": "empty_trajectory"})
+            continue
         trajectories.extend(value.trajectory for value in scored)
         rows.extend(grpo_rows(scored))
 
-    output = Path(config.output_dir)
     trajectory_store = TrajectoryStore(output / "trajectories.jsonl")
     for trajectory in trajectories:
         trajectory_store.append(trajectory)
     write_grpo_rows(rows, output / "grpo.jsonl")
     counts = {"tasks": len(tasks), "trajectories": len(trajectories), "rows": len(rows)}
+    if reviewer is not None:
+        counts["skipped_groups"] = len(skipped_groups)
+        write_json_atomic(output / "skipped_groups.json", {"groups": skipped_groups})
     write_json_atomic(
         output / "rollout_manifest.json",
         {"config": asdict(config), "counts": counts},

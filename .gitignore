@@ -229,3 +229,20 @@ data/scheduler/v1/teacher/
 data/scheduler/v1/paired/
 data/scheduler/v1/sft/
 data/scheduler/v1/features.jsonl
+
+# Machine-local indexes, independent tools, and generated trajectory batches
+.DS_Store
+.codegraph/
+.ua/
+codegraph.json
+cockpit-tools/
+data/scheduler/v1/experiments/
+data/scheduler/v1/sft100/
+data/scheduler/v1/sft164/
+data/scheduler/v1/sft200/
+data/scheduler/v1/validation-partial/
+*.safetensors
+*.pt
+.env.*
+!.env.example
+!.env.enterprise.example

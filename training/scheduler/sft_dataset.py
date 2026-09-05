@@ -70,7 +70,7 @@ def validate_task_isolation(
 
 
 class HierarchicalSourceSampler(Sampler[int]):
-    """Choose source, task, trajectory, then step to avoid long-path dominance."""
+    """Shuffle all rows once per epoch, or use legacy weighted source sampling."""
 
     def __init__(
         self,
@@ -78,14 +78,18 @@ class HierarchicalSourceSampler(Sampler[int]):
         *,
         teacher_probability: float = 0.8,
         seed: int = 42,
+        cover_all: bool = False,
     ):
         if not 0 <= teacher_probability <= 1:
             raise ValueError("teacher_probability must be between zero and one")
         self.rows = rows
         self.teacher_probability = teacher_probability
         self.seed = seed
+        self.cover_all = cover_all
         self.epoch = 0
         self.groups = self._group(rows)
+        if not rows:
+            raise ValueError("cannot sample an empty SFT dataset")
 
     @staticmethod
     def _group(rows: Sequence[dict[str, Any]]):
@@ -99,24 +103,34 @@ class HierarchicalSourceSampler(Sampler[int]):
         self.epoch = epoch
 
     def __len__(self) -> int:
-        return len(self.rows)
+        return sum(self.source_quotas().values())
+
+    def source_quotas(self) -> dict[str, int]:
+        counts = {
+            source: sum(len(steps) for task in tasks.values() for steps in task.values())
+            for source, tasks in self.groups.items()
+        }
+        if self.cover_all or len(counts) == 1:
+            return counts
+        teacher = round(len(self.rows) * self.teacher_probability)
+        return {"static": len(self.rows) - teacher, "teacher": teacher}
+
+    def _draw(self, source: str, rng: random.Random) -> int:
+        tasks = self.groups[source]
+        trajectories = tasks[rng.choice(tuple(tasks))]
+        return rng.choice(trajectories[rng.choice(tuple(trajectories))])
 
     def __iter__(self) -> Iterator[int]:
         rng = random.Random(self.seed + self.epoch)
-        if set(self.groups) == {"static", "teacher"}:
-            teacher_draws = round(len(self) * self.teacher_probability)
-            sources = ["teacher"] * teacher_draws + ["static"] * (
-                len(self) - teacher_draws
-            )
-            rng.shuffle(sources)
-        else:
-            sources = [next(iter(self.groups))] * len(self)
+        if self.cover_all:
+            indices = list(range(len(self.rows)))
+            rng.shuffle(indices)
+            yield from indices
+            return
+        sources = [source for source, count in self.source_quotas().items() for _ in range(count)]
+        rng.shuffle(sources)
         for source in sources:
-            tasks = self.groups[source]
-            task_id = rng.choice(tuple(tasks))
-            trajectories = tasks[task_id]
-            trajectory_id = rng.choice(tuple(trajectories))
-            yield rng.choice(trajectories[trajectory_id])
+            yield self._draw(source, rng)
 
 
 class MaskedActionCollator:
@@ -140,10 +154,7 @@ class MaskedActionCollator:
 
         return {
             "input_ids": torch.tensor(
-                [
-                    left_pad(value["input_ids"], self.tokenizer.pad_token_id)
-                    for value in encoded
-                ]
+                [left_pad(value["input_ids"], self.tokenizer.pad_token_id) for value in encoded]
             ),
             "attention_mask": torch.tensor(
                 [left_pad([1] * len(value["input_ids"]), 0) for value in encoded]
@@ -151,8 +162,7 @@ class MaskedActionCollator:
             "prediction_indices": torch.full((len(encoded),), width - 1),
             "valid_action_token_ids": torch.tensor(
                 [
-                    value["valid_token_ids"]
-                    + [0] * (action_width - len(value["valid_token_ids"]))
+                    value["valid_token_ids"] + [0] * (action_width - len(value["valid_token_ids"]))
                     for value in encoded
                 ]
             ),

@@ -24,6 +24,13 @@ def get_YFin_data_online(
     datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
+    from .ohlcv_snapshot import read_ohlcv_snapshot
+    snapshot = read_ohlcv_snapshot(symbol, end_date, start_date)
+    if snapshot is not None:
+        return (f"# Frozen historical OHLCV for {symbol}: {start_date} to {end_date}\n"
+                "# Source: previously retrieved Yahoo Finance adjusted-price cache\n\n"
+                + snapshot.to_csv(index=False))
+
     # Resolve broker/forex symbols to Yahoo's convention (XAUUSD+ -> GC=F).
     canonical = normalize_symbol(symbol)
     ticker = yf.Ticker(canonical)

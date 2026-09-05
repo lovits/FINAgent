@@ -194,17 +194,19 @@ data/scheduler/v1/sft/manifest.json
 
 ## 7. SFT样本混合
 
-整个SFT阶段固定使用2:8来源比例，以Teacher动态路径为主：
+整个SFT阶段使用全部清洗后样本，按原始来源分布训练，不强制2:8：
 
 ```text
-每个Epoch：Static 20% / Teacher 80%
+每个Epoch：打乱全部样本 → 每条恰好使用一次
 ```
 
-采样比例由分层Sampler实现，不复制JSONL样本。`teacher_verified`和`teacher_audited`共同组成Teacher的80%采样池；每次先选择Static或Teacher来源，再选择task/trajectory，最后选择其中的SchedulerStep，防止步骤更多的长轨迹天然获得更高训练权重。
+主训练配置启用`cover_all_samples=true`，其含义为无放回全量洗牌。每轮覆盖所有样本一次，不执行过采样或欠采样。保留旧加权采样分支仅供显式设置`cover_all_samples=false`的历史实验使用，当前配置不启用。
+
+当前559条Static和1124条Teacher，每轮1683次样本呈现，两轮3366次。batch=1、梯度累积16时两轮约212次优化器更新。`sampling_plan.json`记录计划，`coverage-epoch-N.json`记录实际覆盖ID、遗漏ID和来源计数；每轮必须覆盖全部样本，且实际抽取数等于唯一样本数。
 
 `teacher_verified`来自有Static对照且配对通过的任务；`teacher_audited`包含结构审核通过的Teacher-only轨迹，以及完成合法编排但与Static最终交易结论不一致的配对Teacher轨迹。Static不作为Teacher正确性的硬标签，配对结果保留作A/B指标。外部Teacher-only任务仍不得与配对输入集重叠。GRPO仍只使用有Static参考的任务。
 
-Teacher数据不足时使用实际合格数量，不重复少量样本凑比例。
+需要更多数据时，从真实任务执行中获取新增轨迹，经相同审核、去重和长度检查后合并。2:8只属于早期数据采集方案，当前SFT不为达到该比例重复抽取数据。
 
 ## 8. SFT动作分类目标
 
@@ -307,7 +309,7 @@ sft:
 4. 注入q/k/v/o LoRA并验证目标层命中
 5. 读取Train与Validation SFT数据
 6. 拒绝超过32K的样本
-7. 按长度分桶并在每个Epoch执行固定2:8来源采样
+7. 每个Epoch打乱全部样本，无放回遍历一次
 8. 在同一valid_actions Mask上计算下一动作Cross-Entropy
 9. 每个Epoch运行Validation
 10. 保存最佳Adapter、Tokenizer、配置和指标
@@ -389,42 +391,31 @@ Agent执行与训练分离：TradingAgents负责真实环境执行和轨迹，Au
 - 冗余Agent、Tool、Token和失败成本
 ```
 
-### 14.2 初始Reward分量
+### 14.2 自动监督Reward
 
-| 分量 | 权重或惩罚 |
-|---|---:|
-| Portfolio五级评级与Static相似度 | `+0.70 × similarity` |
-| Trader Buy/Hold/Sell与Static一致 | `+0.30` |
-| 唯一STOP、动作合法且无错误 | `+0.10` |
-| Research Plan、Trader、Portfolio完整 | `+0.20` |
-| 每个Agent调用 | `-0.02` |
-| 每个Tool调用 | `-0.005` |
-| 每1000 Token | `-0.005` |
-| 每个无进展动作 | `-0.10` |
-| 出现非法动作 | `-1.00` |
-| 未完成 | `-1.00` |
-| fallback | `-0.25`，且回退结果不获得完成与质量奖励 |
+主Rollout配置使用`reward_mode=automatic`，入口为`auto_review.AutomaticReviewer`。先执行原有结构审核；规则未通过给-1，不请求大模型。网络、行情服务或评审不可用时标记unavailable，整组排除出GRPO，不把外部故障伪装成策略负奖励。旧`static_agreement`评分只为已有实验保留，不是当前主配置。
 
-总Reward裁剪到`[-1.5, 1.2]`。
+大模型只接收任务、分析师证据和最终报告，不接收来源模式、成本或Static答案。固定评审模型与提示词版本，每个维度给0—4整数分、原因及原文引用：证据一致性、逻辑一致性、风险披露。程序验证引用存在，并计算三个维度的平均值，归一到quality∈[0,1]。引用校验是必要条件，不意味着已证明评审语义正确或预测未来收益正确。
 
-Static用于构造稳定质量参照。未来股票收益不进入第一版训练Reward。
+非法评审最多重试一次，仍失败则记录unavailable。评审提示明确防止报告内指令影响打分，并要求识别相对于任务日期的未来证据；这属于模型评审项，不是已实现的确定性日期验证器。
 
-### 14.3 `RewardBreakdown`
+| 条件 | Reward |
+|---|---|
+| 结构/完成规则失败 | -1 |
+| 完成但quality<0.5 | quality-0.5 |
+| 完成且quality≥0.5 | 0.2+0.8×quality-cost_penalty |
+| 评审或基础设施不可用 | 不生成训练奖励，跳过整组 |
+
+`cost_penalty=min(0.15, 0.005×Agent调用数 + 0.001×总Token/1000)`。成本只有在质量达到门槛后参与，并设置上限。合法动作掩码已约束的行为不再当作独立质量奖励；Static交易结论匹配只保留为A/B指标。
+
+### 14.3 `AutoReward`
 
 ```json
 {
-  "total": 0.61,
-  "portfolio_quality": 0.70,
-  "trader_quality": 0.30,
-  "format_compliance": 0.10,
-  "completion": 0.20,
-  "agent_cost": 0.22,
-  "tool_cost": 0.04,
-  "token_cost": 0.08,
-  "no_progress": 0.00,
-  "invalid": 0.00,
-  "incomplete": 0.00,
-  "fallback": 0.00
+  "total": 0.70,
+  "quality": 0.75,
+  "completion": 1.0,
+  "cost_penalty": 0.10
 }
 ```
 
@@ -441,6 +432,10 @@ Static用于构造稳定质量参照。未来股票收益不进入第一版训�
 一条轨迹中的所有Scheduler动作共享该轨迹优势。
 
 这表示：完成质量高且成本低的整条Agent协作路径被整体鼓励；失败、冗余或高成本路径被整体抑制。
+
+训练Loader根据组大小与每条轨迹的决策步数生成`loss_weight`，使策略损失与KL按组→轨迹→步骤平均；长轨迹不会仅因步骤多就获得更大总权重。这里只有一个合法动作的步骤在掩码分类下不产生选择梯度。该方案是轨迹级信用分配，不是因果归因或逐步反事实打分。
+
+自动评分模式下，全组奖励相同、空轨迹或评审失败的组不进入GRPO行。原始轨迹仍保存到`raw-trajectories.jsonl`，原因写入`skipped_groups.json`，逐条质量评审写入`quality_reviews.json`。
 
 ## 16. GRPO训练行
 

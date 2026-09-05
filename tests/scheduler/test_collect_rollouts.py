@@ -125,9 +125,22 @@ def _static_reference() -> SchedulerTrajectory:
     return trajectory
 
 
+@pytest.mark.parametrize("reward_mode", ["static_agreement", "automatic"])
 def test_collect_rollouts_materializes_four_trajectory_credit_group(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, reward_mode
 ) -> None:
+    from training.scheduler.auto_review import AutoReward
+
+    class Reviewer:
+        def __init__(self, *args):
+            self.reviews = {}
+
+        def __call__(self, trajectory, reference):
+            score = trajectory.cost_total.agent_calls / 4
+            self.reviews[trajectory.trajectory_id] = {"quality": score}
+            return AutoReward(score, score, 1, 0)
+
+    monkeypatch.setattr("training.scheduler.collect_rollouts.AutomaticReviewer", Reviewer)
     tasks_path = tmp_path / "tasks.jsonl"
     tasks_path.write_text(
         json.dumps(
@@ -158,7 +171,7 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
     counts = collect(
         RolloutConfig(
             tasks_path=str(tasks_path),
-            static_trajectories_path=str(static_path),
+            static_trajectories_path=str(static_path) if reward_mode == "static_agreement" else "not-required.jsonl",
             active_adapter_path="adapter/active",
             reference_adapter_path="adapter/reference",
             output_dir=str(tmp_path / "rollouts"),
@@ -166,10 +179,15 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
             reward_config_path=None,
             base_model="tiny",
             base_revision=None,
+            reward_mode=reward_mode,
         )
     )
 
-    assert counts == {"tasks": 1, "trajectories": 4, "rows": 8}
+    expected = {"tasks": 1, "trajectories": 4, "rows": 8}
+    if reward_mode == "automatic":
+        expected["skipped_groups"] = 0
+        assert (tmp_path / "rollouts/quality_reviews.json").is_file()
+    assert counts == expected
     rows = [
         json.loads(line)
         for line in (tmp_path / "rollouts" / "grpo.jsonl").read_text().splitlines()

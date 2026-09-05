@@ -61,6 +61,22 @@ artifacts/scheduler/qwen3-1p7b/sft/training_manifest.json
 - Train：1683条Scheduler动作样本，162个任务；
 - Validation：110条Scheduler动作样本，8个独立任务；
 - Train/Validation无`task_id`重叠；
-- 训练采样固定为20% Static和80% Teacher；
+- 每轮按原始来源比例训练全部样本，每条恰好一次；
 - 最大上下文32768 Token；
 - 仅下一Agent动作产生Loss，报告和工具结果只作为输入上下文。
+
+当前训练配置启用无放回全量洗牌：每轮559条Static、1124条Teacher，共1683次；两轮3366次样本呈现，约212次参数更新。无需补采样；后续通过真实新增数据扩充训练集。
+
+每轮查看`sampling_plan.json`与`coverage-epoch-N.json`：遗漏数必须为0，实际抽取数须与计划一致。
+
+## 6. 每轮五场景自动监督
+
+本地已提供`training.scheduler.train_with_evaluation`入口，与独立SFT使用同一训练函数；使用`configs/scheduler/sft-cycle-qwen3-1p7b-autodl.json`并传入5个与训练/验证隔离的任务JSONL即可。每轮保存checkpoint，再执行5个Learned和5个Static任务，然后继续下一轮，优化器状态在同一进程中保留。完整进程中断后的断点恢复不是此回调的能力。
+
+```bash
+.venv/bin/python -m training.scheduler.train_with_evaluation \
+  --config configs/scheduler/sft-cycle-qwen3-1p7b-autodl.json \
+  --tasks artifacts/scheduler/sft-cycle-20260905/eval-tasks-5.jsonl
+```
+
+真实场景和质量评审需要`OPENROUTER_API_KEY`；纯离线SFT不需要。评审与奖励记录在每轮`scenarios/epoch-NN/quality_reviews.json`和`comparison.json`中。程序校验必需报告和合法动作，大模型按证据/逻辑/风险评分并引用原文；评审失败不会记为0分冒充坏策略。GRPO主配置复用同一自动评审，保留原始轨迹与跳过组原因。
