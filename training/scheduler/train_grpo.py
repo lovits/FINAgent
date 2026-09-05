@@ -155,10 +155,13 @@ def train(config: GRPOTrainConfig) -> dict[str, float]:
 
 
 def main() -> None:
+    from .gpu_lease import gpu_lease
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
-    print(json.dumps(train(GRPOTrainConfig.from_json(args.config)), sort_keys=True))
+    with gpu_lease():
+        print(json.dumps(train(GRPOTrainConfig.from_json(args.config)), sort_keys=True))
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from tradingagents.scheduler.store import write_json_atomic
 from .auto_review import AutomaticReviewer
 from .evaluate import evaluate_trajectories
 from .generate import load_tasks
+from .gpu_lease import gpu_lease
 from .model import SchedulerModelConfig, load_scheduler_model
 from .runtime_config import scheduler_runtime_config
 from .train_with_evaluation import run_task
@@ -49,7 +50,7 @@ class BenchmarkPolicy(HFSchedulerPolicy):
         import torch
 
         requested = time.monotonic()
-        with self.gpu_lock:
+        with self.gpu_lock, gpu_lease():
             started = time.monotonic()
             timing = self.timings[context.task_id]
             timing["queue_seconds"] += started - requested
@@ -137,6 +138,8 @@ def main():
     parser.add_argument("--checkpoint-root", required=True)
     parser.add_argument("--training-status", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--share-gpu", action="store_true")
+    parser.add_argument("--gpu-budget-gib", type=float, default=7.0)
     args = parser.parse_args()
     load_dotenv()
     tasks = load_tasks(args.tasks)
@@ -146,9 +149,19 @@ def main():
     write_json_atomic(output / "manifest.json", {"tasks": tasks, "model_versions": ["base", "sft3", "sft6"],
         "seed": 42, "planned_tasks": 21, "expert_request_limit": 8, "gpu_concurrency": 1,
         "raw_base_action_tokens": "same project action tokens registered; model loading/resizing seed 42; no SFT adapter",
+        "shared_gpu": args.share_gpu, "gpu_allocator_budget_gib": args.gpu_budget_gib,
         "checkpoint_root": args.checkpoint_root, "base_model": args.base_model})
     os.environ["TRADINGAGENTS_OHLCV_SNAPSHOT_DIR"] = str(Path(args.snapshot_dir).resolve())
-    wait_for_training(Path(args.training_status), output)
+    if args.share_gpu:
+        if not torch.cuda.is_available():
+            raise RuntimeError("GPU evaluation requires CUDA")
+        total = torch.cuda.get_device_properties(0).total_memory
+        fraction = args.gpu_budget_gib * 1024**3 / total
+        if not 0 < fraction < 1:
+            raise ValueError("GPU budget must be smaller than total device memory")
+        torch.cuda.set_per_process_memory_fraction(fraction)
+    else:
+        wait_for_training(Path(args.training_status), output)
     torch.set_num_threads(2)
     gpu_lock = Lock()
     policies = {}

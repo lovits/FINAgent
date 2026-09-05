@@ -8,6 +8,19 @@ import pytest
 from training.scheduler.sft_benchmark import limit_expert_requests, validate_tasks, wait_for_training
 
 
+def test_gpu_lease_excludes_other_handles_and_releases(tmp_path):
+    fcntl = pytest.importorskip("fcntl")
+    from training.scheduler.gpu_lease import gpu_lease
+
+    path = tmp_path / "gpu.lock"
+    with gpu_lease(path), path.open("a") as other:
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with path.open("a") as other:
+        fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(other.fileno(), fcntl.LOCK_UN)
+
+
 def test_seeds_require_three_seen_and_four_unseen():
     tasks = [{"task_id": str(i), "evaluation_bucket": "seen_sft" if i < 3 else "unseen_sft",
               "sft_part3_samples_seen": int(i < 3), "sft_part6_samples_seen": int(i < 3)} for i in range(7)]
