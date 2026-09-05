@@ -5,7 +5,14 @@ import time
 
 import pytest
 
-from training.scheduler.sft_benchmark import limit_expert_requests, validate_tasks, wait_for_training
+from training.scheduler.sft_benchmark import (
+    limit_expert_requests,
+    prepare_resume,
+    validate_tasks,
+    wait_for_training,
+)
+from tests.scheduler.test_extend_sft_sources import _trajectory
+from tradingagents.scheduler.store import TrajectoryStore
 
 
 def test_gpu_budget_is_per_process_and_leaves_headroom(monkeypatch):
@@ -64,6 +71,46 @@ def test_api_gate_bounds_concurrency_and_restores_method(monkeypatch):
     with limit_expert_requests(2), ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(lambda _: ChatOpenAI._generate(None), range(8)))
     assert peak == 2 and ChatOpenAI._generate is call
+
+
+def test_json_decode_gets_one_internal_request_retry(monkeypatch):
+    from json import JSONDecodeError
+    from langchain_openai import ChatOpenAI
+
+    attempts = 0
+    def call(self):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise JSONDecodeError("empty", "", 0)
+        return "ok"
+    monkeypatch.setattr(ChatOpenAI, "_generate", call)
+    with limit_expert_requests(1):
+        assert ChatOpenAI._generate(None) == "ok"
+    assert attempts == 2
+
+
+def test_resume_preserves_success_and_retries_failure_only_once(tmp_path):
+    tasks = [{"task_id": "success"}, {"task_id": "failed"}, {"task_id": "overflow"}]
+    success = _trajectory("success", "learned")
+    failed = _trajectory("failed", "learned")
+    failed.execution_status = "failed"
+    failed.failure_reason = "JSONDecodeError"
+    overflow = _trajectory("overflow", "learned")
+    overflow.execution_status = "context_overflow"
+    overflow.failure_reason = "scheduler context has 37407 tokens; maximum is 32768"
+    TrajectoryStore(tmp_path / "model/success/learned/raw.jsonl").append(success)
+    TrajectoryStore(tmp_path / "model/failed/learned/raw.jsonl").append(failed)
+    TrajectoryStore(tmp_path / "model/overflow/learned/raw.jsonl").append(overflow)
+    values, retrying = prepare_resume(tmp_path, ["model"], tasks)
+    assert {t.task_id for t in values["model"]} == {"success", "overflow"}
+    assert retrying == [{"model": "model", "task_id": "failed",
+                         "first_failure": "JSONDecodeError"}]
+    assert (tmp_path / "model/failed/attempt-1/raw.jsonl").exists()
+    TrajectoryStore(tmp_path / "model/failed/learned/raw.jsonl").append(failed)
+    values, retrying = prepare_resume(tmp_path, ["model"], tasks)
+    assert {t.task_id for t in values["model"]} == {"success", "failed", "overflow"}
+    assert retrying == []
 
 
 def test_gpu_gate_waits_for_rl_without_allocating_during_training(monkeypatch, tmp_path):

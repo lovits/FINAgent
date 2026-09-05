@@ -12,7 +12,7 @@ import time
 from dotenv import load_dotenv
 
 from tradingagents.scheduler.hf_policy import HFSchedulerPolicy
-from tradingagents.scheduler.store import write_json_atomic
+from tradingagents.scheduler.store import TrajectoryStore, write_json_atomic
 from .auto_review import AutomaticReviewer
 from .evaluate import evaluate_trajectories
 from .generate import load_tasks
@@ -31,7 +31,15 @@ def limit_expert_requests(limit=8):
 
     def limited(self, *args, **kwargs):
         with semaphore:
-            return original(self, *args, **kwargs)
+            try:
+                return original(self, *args, **kwargs)
+            except json.JSONDecodeError as exc:
+                print(json.dumps({
+                    "event": "expert_response_parse_retry",
+                    "error": type(exc).__name__,
+                    "attempt": 2,
+                }), flush=True)
+                return original(self, *args, **kwargs)
 
     ChatOpenAI._generate = limited
     try:
@@ -78,6 +86,40 @@ def validate_tasks(tasks):
             raise ValueError("unseen task overlaps SFT training")
 
 
+def prepare_resume(output, labels, tasks):
+    task_ids = {task["task_id"] for task in tasks}
+    values = {label: [] for label in labels}
+    retrying = []
+    for label in labels:
+        for task_id in task_ids:
+            task_dir = output / label / task_id
+            learned = task_dir / "learned"
+            path = learned / "raw.jsonl"
+            if not path.exists():
+                continue
+            loaded = TrajectoryStore(path).load()
+            if len(loaded) != 1 or loaded[0].task_id != task_id:
+                raise ValueError(f"invalid existing benchmark result: {path}")
+            trajectory = loaded[0]
+            if trajectory.execution_status == "completed":
+                values[label].append(trajectory)
+                continue
+            if "JSONDecodeError" not in (trajectory.failure_reason or ""):
+                values[label].append(trajectory)
+                continue
+            first_attempt = task_dir / "attempt-1"
+            if first_attempt.exists():
+                values[label].append(trajectory)
+                continue
+            learned.rename(first_attempt)
+            timing = task_dir / "timing.json"
+            if timing.exists():
+                timing.rename(task_dir / "attempt-1-timing.json")
+            retrying.append({"model": label, "task_id": task_id,
+                             "first_failure": trajectory.failure_reason})
+    return values, retrying
+
+
 def wait_for_training(training_status, output):
     """No GPU allocation while the independently running RL pipeline owns it."""
     import torch
@@ -122,7 +164,15 @@ def summarize(values, tasks, reviews):
                 metrics.pop(key, None)
             scores = [reviews[t.trajectory_id]["quality"] for t in selected
                       if reviews[t.trajectory_id]["status"] == "reviewed"]
+            unavailable = [t for t in selected if "JSONDecodeError" in (t.failure_reason or "")]
+            evaluable = [t for t in selected if t not in unavailable]
             metrics.update(quality_reviewed=len(scores), mean_quality=sum(scores)/len(scores) if scores else None,
+                           attempted=len(selected), environment_unavailable=len(unavailable),
+                           evaluable_attempts=len(evaluable),
+                           evaluable_completion_rate=(
+                               sum(t.execution_status == "completed" for t in evaluable) / len(evaluable)
+                               if evaluable else None
+                           ),
                            api_cost_usd=None, cost_note="Token counts recorded; dollar cost not inferred from text length.")
             summary[label][bucket] = metrics
     return summary
@@ -140,17 +190,26 @@ def main():
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--share-gpu", action="store_true")
     parser.add_argument("--gpu-budget-gib", type=float, default=7.0)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     load_dotenv()
     tasks = load_tasks(args.tasks)
     validate_tasks(tasks)
     output = Path(args.output_dir)
-    output.mkdir(parents=True, exist_ok=False)
-    write_json_atomic(output / "manifest.json", {"tasks": tasks, "model_versions": ["base", "sft3", "sft6"],
+    output.mkdir(parents=True, exist_ok=args.resume)
+    manifest = {"tasks": tasks, "model_versions": ["base", "sft3", "sft6"],
         "seed": 42, "planned_tasks": 21, "expert_request_limit": 8, "gpu_concurrency": 1,
+        "expert_json_decode_retries": 1,
         "raw_base_action_tokens": "same project action tokens registered; model loading/resizing seed 42; no SFT adapter",
         "shared_gpu": args.share_gpu, "gpu_allocator_budget_gib": args.gpu_budget_gib,
-        "checkpoint_root": args.checkpoint_root, "base_model": args.base_model})
+        "checkpoint_root": args.checkpoint_root, "base_model": args.base_model}
+    manifest_path = output / "manifest.json"
+    if args.resume:
+        existing_manifest = json.loads(manifest_path.read_text())
+        for field in ("tasks", "model_versions", "checkpoint_root", "base_model"):
+            if existing_manifest[field] != manifest[field]:
+                raise ValueError(f"benchmark resume configuration changed: {field}")
+    write_json_atomic(manifest_path, manifest)
     os.environ["TRADINGAGENTS_OHLCV_SNAPSHOT_DIR"] = str(Path(args.snapshot_dir).resolve())
     if args.share_gpu:
         set_gpu_budget(args.gpu_budget_gib)
@@ -172,11 +231,22 @@ def main():
         "deep_think_llm": "z-ai/glm-5.3-flash", "temperature": 0.0, "llm_max_retries": 1,
         "scheduler_max_steps": 16, "scheduler_max_context_tokens": 32768,
         "max_debate_rounds": 1, "max_risk_discuss_rounds": 1})
-    values = {label: [] for label in policies}
-    write_json_atomic(output / "status.json", {"status": "running", "finished": 0, "planned": 21})
+    if args.resume:
+        values, retrying = prepare_resume(output, policies, tasks)
+        write_json_atomic(output / "retry-attempts.json", {
+            "maximum_full_task_retries": 1,
+            "retryable_failure": "JSONDecodeError only",
+            "retrying": retrying,
+        })
+    else:
+        values, retrying = {label: [] for label in policies}, []
+    completed = {(label, t.task_id) for label, trajectories in values.items() for t in trajectories}
+    write_json_atomic(output / "status.json", {"status": "running", "finished": len(completed), "planned": 21})
     with limit_expert_requests(8), ThreadPoolExecutor(max_workers=21) as pool:
+        jobs = [(task, label, policy) for label, policy in policies.items() for task in tasks
+                if (label, task["task_id"]) not in completed]
         futures = {pool.submit(run_one, task, label, policy, runtime, output): label
-                   for label, policy in policies.items() for task in tasks}
+                   for task, label, policy in jobs}
         for future in as_completed(futures):
             values[futures[future]].append(future.result())
             write_json_atomic(output / "status.json", {"status": "running", "finished": sum(map(len, values.values())), "planned": 21})
