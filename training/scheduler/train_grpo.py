@@ -26,7 +26,7 @@ class GRPOTrainConfig:
     attention_implementation: str = "sdpa"
     max_length: int = 32768
     rollout_temperature: float = 0.8
-    group_size: int = 4
+    group_size: int | None = 4
     micro_batch_size: int = 1
     gradient_accumulation_steps: int = 8
     epochs: int = 1

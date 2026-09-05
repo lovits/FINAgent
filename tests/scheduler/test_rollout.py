@@ -1,3 +1,5 @@
+import pytest
+
 from tradingagents.scheduler.actions import SchedulerAction
 from tradingagents.scheduler.contracts import PolicyDecision, SchedulerContext
 from tradingagents.scheduler.trajectory import SchedulerStep, SchedulerTrajectory
@@ -148,6 +150,29 @@ def test_judge_failure_retains_raw_group_and_produces_no_fake_score():
                         run_id="group", base_seed=42)
     assert len(raw) == 4
     assert all(trajectory.reward is None for trajectory in raw)
+
+
+def test_one_unscorable_candidate_does_not_discard_the_other_three():
+    from training.scheduler.auto_review import AutoReward, ReviewUnavailable
+
+    def partly_available(trajectory, reference):
+        index = int(trajectory.trajectory_id.rsplit(":", 1)[-1])
+        if index == 0:
+            raise ReviewUnavailable("upstream unavailable")
+        return AutoReward(float(index), 1, 1, 0)
+
+    runner = GroupRolloutRunner(_Environment(), reward_scorer=partly_available,
+                                trajectory_workers=4)
+    scored = runner.run_task(
+        {"task_id": "task-1", "ticker": "AAPL", "trade_date": "2026-01-05",
+         "data_snapshot_id": "snapshot-1"}, active_policy=_ActivePolicy(),
+        reference_policy=_ReferencePolicy(), static_reference=None,
+        run_id="partial", base_seed=42,
+    )
+    assert len(scored) == 3
+    assert {item.trajectory.trajectory_id.rsplit(":", 1)[-1]
+            for item in scored} == {"1", "2", "3"}
+    assert sum(item.advantage for item in scored) == pytest.approx(0)
 
 
 def test_candidate_execution_and_reward_review_are_parallel():

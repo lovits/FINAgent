@@ -80,6 +80,8 @@ class SchedulerGRPODataset(Dataset):
         for group_id, trajectories in groups.items():
             if len(group_tasks[group_id]) != 1:
                 raise ValueError(f"GRPO group {group_id} mixes multiple tasks")
+            if len(trajectories) < 2:
+                raise ValueError(f"GRPO group {group_id} needs at least two trajectories")
             if expected_group_size is not None and len(trajectories) != expected_group_size:
                 raise ValueError(
                     f"GRPO group {group_id} has {len(trajectories)} trajectories; "

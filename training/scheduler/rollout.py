@@ -139,12 +139,25 @@ class GroupRolloutRunner:
                     self.trajectory_sink(trajectory)
 
         def score(value):
-            return (self.reward_scorer(value, static_reference)
-                    if self.reward_scorer is not None
-                    else score_trajectory(value, static_reference, config=self.reward_config))
+            from .auto_review import ReviewUnavailable
+
+            try:
+                reward = (self.reward_scorer(value, static_reference)
+                          if self.reward_scorer is not None
+                          else score_trajectory(value, static_reference,
+                                                config=self.reward_config))
+                return value, reward
+            except ReviewUnavailable:
+                return value, None
 
         with ThreadPoolExecutor(max_workers=min(self.group_size, self.trajectory_workers)) as pool:
-            rewards = list(pool.map(score, trajectories))
+            assessed = list(pool.map(score, trajectories))
+        usable = [(trajectory, reward) for trajectory, reward in assessed
+                  if reward is not None]
+        if len(usable) < 2:
+            from .auto_review import ReviewUnavailable
+            raise ReviewUnavailable("fewer than two scorable trajectories in group")
+        trajectories, rewards = map(list, zip(*usable, strict=True))
         advantages = group_relative_advantages([value.total for value in rewards])
         scored = []
         for trajectory, reward, advantage in zip(

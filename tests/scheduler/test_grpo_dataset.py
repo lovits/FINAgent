@@ -27,8 +27,10 @@ def _row() -> dict:
 
 def test_grpo_dataset_and_collator_preserve_policy_statistics(tmp_path) -> None:
     target = tmp_path / "grpo.jsonl"
-    target.write_text(json.dumps(_row()) + "\n", encoding="utf-8")
-    dataset = SchedulerGRPODataset(target)
+    second = {**_row(), "trajectory_id": "trajectory-2", "advantage": -1.0}
+    target.write_text(json.dumps(_row()) + "\n" + json.dumps(second) + "\n",
+                      encoding="utf-8")
+    dataset = SchedulerGRPODataset(target, expected_group_size=2)
     tokenizer = FakeTokenizer()
     register_action_tokens(tokenizer)
     batch = GRPOCollator(tokenizer, max_length=64)([dataset[0]])
@@ -36,6 +38,13 @@ def test_grpo_dataset_and_collator_preserve_policy_statistics(tmp_path) -> None:
     assert batch["old_logprobs"].item() == -0.5
     assert batch["ref_logprobs"].item() == pytest.approx(-0.7)
     assert batch["advantages"].item() == 1.0
+
+
+def test_grpo_dataset_rejects_singleton_group(tmp_path) -> None:
+    target = tmp_path / "grpo.jsonl"
+    target.write_text(json.dumps(_row()) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="at least two"):
+        SchedulerGRPODataset(target)
 
 
 def test_grpo_dataset_requires_complete_zero_mean_groups(tmp_path) -> None:

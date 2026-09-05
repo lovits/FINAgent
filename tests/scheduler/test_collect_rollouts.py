@@ -186,7 +186,7 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
         )
     )
 
-    expected = {"tasks": 1, "trajectories": 4, "rows": 8}
+    expected = {"tasks": 1, "usable_groups": 1, "trajectories": 4, "rows": 8}
     if reward_mode == "automatic":
         expected["skipped_groups"] = 0
         assert (tmp_path / "rollouts/quality_reviews.json").is_file()
@@ -246,7 +246,7 @@ def test_eight_task_groups_are_collected_concurrently(monkeypatch, tmp_path):
         reward_mode="automatic", reward_config_path=None,
         parallel_workers=8, trajectory_workers=1,
     ))
-    assert counts == {"tasks": 8, "trajectories": 32, "rows": 64,
+    assert counts == {"tasks": 8, "usable_groups": 8, "trajectories": 32, "rows": 64,
                       "skipped_groups": 0}
     raw = TrajectoryStore(tmp_path / "output/raw-trajectories.jsonl").load()
     assert len(raw) == len({item.trajectory_id for item in raw}) == 32

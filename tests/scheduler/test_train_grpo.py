@@ -76,7 +76,7 @@ def test_tiny_grpo_entry_point_updates_and_saves_adapter(monkeypatch, tmp_path) 
             base_revision=None,
             dtype="float32",
             max_length=64,
-            group_size=2,
+            group_size=None,
             gradient_accumulation_steps=1,
             epochs=1,
         )

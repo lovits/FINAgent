@@ -203,7 +203,12 @@ def collect(config: RolloutConfig) -> dict[str, int]:
     for trajectory in trajectories:
         trajectory_store.append(trajectory)
     write_grpo_rows(rows, output / "grpo.jsonl")
-    counts = {"tasks": len(tasks), "trajectories": len(trajectories), "rows": len(rows)}
+    counts = {
+        "tasks": len(tasks),
+        "usable_groups": sum(bool(results[index][1]) for index in results),
+        "trajectories": len(trajectories),
+        "rows": len(rows),
+    }
     if config.reward_mode == "automatic":
         counts["skipped_groups"] = len(skipped_groups)
         write_json_atomic(review_path, reviews)

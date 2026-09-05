@@ -16,11 +16,29 @@ from .train_grpo import GRPOTrainConfig
 
 
 def validate_plan(plan):
-    training = load_tasks(plan["train_tasks"], split="train")
-    train_ids = {task["task_id"] for task in training}
-    if len(training) != 8 or len(train_ids) != 8:
-        raise ValueError("RL requires eight distinct training tasks")
-    return training
+    total_rounds = int(plan.get("rounds", 5))
+    task_sets = {}
+    first = None
+    for number in range(1, total_rounds + 1):
+        path = _task_path(plan, number)
+        training = load_tasks(path, split="train")
+        train_ids = {task["task_id"] for task in training}
+        if len(training) != 8 or len(train_ids) != 8:
+            raise ValueError(f"RL round {number} requires eight distinct training tasks")
+        first = training if first is None else first
+        task_sets.setdefault(path, train_ids)
+    unique_sets = list(task_sets.items())
+    for index, (left_path, left) in enumerate(unique_sets):
+        for right_path, right in unique_sets[index + 1:]:
+            if left & right:
+                raise ValueError(
+                    f"different RL seed files overlap: {left_path} and {right_path}"
+                )
+    return first
+
+
+def _task_path(plan, number):
+    return plan.get("train_tasks_by_round", {}).get(str(number), plan["train_tasks"])
 
 
 def run_stage(module, config, directory):
@@ -69,7 +87,7 @@ def run(plan, *, resume=False):
             directory.mkdir(exist_ok=resume and number == start_round)
             write_json_atomic(output / "status.json", {"status": "running", "round": number, "stage": "rollout"})
             rollout = RolloutConfig(
-                tasks_path=plan["train_tasks"], static_trajectories_path="",
+                tasks_path=_task_path(plan, number), static_trajectories_path="",
                 active_adapter_path=active, reference_adapter_path=initial,
                 output_dir=str(directory / "rollouts"), run_id=f"rl-round-{number}",
                 base_model=plan["base_model"], base_revision=None,
@@ -80,13 +98,13 @@ def run(plan, *, resume=False):
             )
             run_stage("training.scheduler.collect_rollouts", rollout, directory)
             counts = json.loads((directory / "rollouts/rollout_manifest.json").read_text())["counts"]
-            if counts["trajectories"] < 8 or counts["rows"] == 0:
+            if counts["usable_groups"] < 2 or counts["rows"] == 0:
                 raise RuntimeError("Fewer than two usable reward groups; no parameter update performed")
             checkpoint = directory / "checkpoint"
             training = GRPOTrainConfig(
                 rollout_path=str(directory / "rollouts/grpo.jsonl"), sft_adapter_path=active,
                 output_dir=str(checkpoint), base_model=plan["base_model"], base_revision=None,
-                learning_rate=5e-6, epochs=1, group_size=4,
+                learning_rate=5e-6, epochs=1, group_size=None,
             )
             write_json_atomic(output / "status.json", {"status": "running", "round": number, "stage": "grpo_update"})
             run_stage("training.scheduler.train_grpo", training, directory)
