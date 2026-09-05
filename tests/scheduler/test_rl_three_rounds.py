@@ -50,6 +50,9 @@ def test_three_rounds_use_previous_model_and_skip_updates_without_reward_groups(
         assert kwargs["tasks"] is tasks
         assert not kwargs["include_static"] and not kwargs["include_teacher"]
         events.append("evaluate")
+        target = kwargs["output"] / f"epoch-{args[0]:02d}"
+        target.mkdir(parents=True)
+        (target / "comparison.json").write_text(json.dumps({"modes": {"learned": {"completion_rate": 1}}}))
 
     monkeypatch.setattr("training.scheduler.rl_three_rounds.run_stage", stage)
     monkeypatch.setattr("training.scheduler.rl_three_rounds.evaluate_epoch", evaluate)
@@ -59,8 +62,8 @@ def test_three_rounds_use_previous_model_and_skip_updates_without_reward_groups(
     monkeypatch.setattr("torch.cuda.is_available", lambda: True)
     if usable:
         run(plan)
-        assert events == ["collect_rollouts", "train_grpo", "evaluate"] * 3
+        assert events == ["evaluate"] + ["collect_rollouts", "train_grpo", "evaluate"] * 3
     else:
         with pytest.raises(RuntimeError, match="no parameter update"):
             run(plan)
-        assert events == ["collect_rollouts"]
+        assert events == ["evaluate", "collect_rollouts"]

@@ -38,6 +38,23 @@ def run_stage(module, config, directory):
                        stdout=log, stderr=subprocess.STDOUT, check=True)
 
 
+def evaluate_checkpoint(plan, adapter, tasks, number, directory):
+    import torch
+
+    model, tokenizer, _ = load_scheduler_model(SchedulerModelConfig(
+        base_model=plan["base_model"], base_revision=None, adapter_path=str(adapter),
+    ), training=False)
+    model.to("cuda")
+    model.config.use_cache = False
+    evaluate_epoch(number, model, tokenizer, Path(adapter), tasks=tasks,
+                   output=directory, max_length=32768,
+                   include_static=False, include_teacher=False)
+    del model, tokenizer
+    gc.collect()
+    torch.cuda.empty_cache()
+    return json.loads((directory / f"epoch-{number:02d}" / "comparison.json").read_text())
+
+
 def run(plan):
     import torch
 
@@ -50,7 +67,12 @@ def run(plan):
     os.environ["TRADINGAGENTS_OHLCV_SNAPSHOT_DIR"] = str(Path(plan["snapshot_dir"]).resolve())
     initial = plan["initial_adapter"]
     active = initial
+    number = 0
     try:
+        write_json_atomic(output / "status.json", {"status": "running", "round": 0, "stage": "sft_baseline"})
+        baseline = evaluate_checkpoint(plan, initial, tasks, 0, output / "sft-baseline")
+        if baseline["modes"]["learned"]["completion_rate"] == 0:
+            raise RuntimeError("Both SFT baseline tasks failed; repair task execution before RL")
         for number in range(1, 4):
             directory = output / f"round-{number}"
             directory.mkdir()
@@ -77,17 +99,7 @@ def run(plan):
             run_stage("training.scheduler.train_grpo", training, directory)
             active = str(checkpoint)
             write_json_atomic(output / "status.json", {"status": "running", "round": number, "stage": "evaluation"})
-            model, tokenizer, _ = load_scheduler_model(SchedulerModelConfig(
-                base_model=plan["base_model"], base_revision=None, adapter_path=active,
-            ), training=False)
-            model.to("cuda")
-            model.config.use_cache = False
-            evaluate_epoch(number, model, tokenizer, checkpoint, tasks=tasks,
-                           output=directory / "evaluation", max_length=32768,
-                           include_static=False, include_teacher=False)
-            del model, tokenizer
-            gc.collect()
-            torch.cuda.empty_cache()
+            evaluate_checkpoint(plan, active, tasks, number, directory / "evaluation")
         write_json_atomic(output / "status.json", {"status": "completed", "rounds": 3, "final_adapter": active})
     except BaseException as exc:
         write_json_atomic(output / "status.json", {"status": "needs_attention", "round": number,
