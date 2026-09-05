@@ -75,6 +75,17 @@ def test_corrected_judge_response_is_accepted():
     assert review["quality"] == 0.75
 
 
+def test_existing_review_is_reused_without_another_judge_request():
+    trajectory = _complete_trajectory("cached", "teacher", "r")
+    cached = {"status": "reviewed", "quality": 0.75, "dimensions": assessment()}
+    reviewer = AutomaticReviewer(
+        transport=lambda *a, **kw: pytest.fail("cached review must not call judge"),
+        existing_reviews={trajectory.trajectory_id: cached},
+    )
+    assert reviewer.assess(trajectory) == cached
+    assert reviewer.snapshot() == {trajectory.trajectory_id: cached}
+
+
 @pytest.mark.parametrize("value", [True, -1, 5, float("nan"), "3"])
 def test_invalid_scores_are_rejected(value):
     answer = assessment()

@@ -31,23 +31,39 @@ def run_stage(module, config, directory):
                        stdout=log, stderr=subprocess.STDOUT, check=True)
 
 
-def run(plan):
+def _completed_checkpoint(output: Path, number: int) -> Path | None:
+    checkpoint = output / f"round-{number}" / "checkpoint"
+    required = ("adapter_model.safetensors", "training-state.pt", "training_manifest.json")
+    return checkpoint if all((checkpoint / name).is_file() for name in required) else None
+
+
+def run(plan, *, resume=False):
     import torch
 
     validate_plan(plan)
     if not torch.cuda.is_available():
         raise RuntimeError("No CUDA GPU is available; RL was not started")
     output = Path(plan["output_dir"])
-    output.mkdir(parents=True, exist_ok=False)
-    write_json_atomic(output / "plan.json", plan)
+    output.mkdir(parents=True, exist_ok=resume)
+    if not resume or not (output / "plan.json").exists():
+        write_json_atomic(output / "plan.json", plan)
     os.environ["TRADINGAGENTS_OHLCV_SNAPSHOT_DIR"] = str(Path(plan["snapshot_dir"]).resolve())
     initial = plan["initial_adapter"]
     active = initial
-    number = 0
+    start_round = 1
+    for completed_round in range(1, 4):
+        checkpoint = _completed_checkpoint(output, completed_round)
+        if checkpoint is None:
+            break
+        active = str(checkpoint)
+        start_round = completed_round + 1
+    if start_round > 3:
+        raise ValueError("all three GRPO rounds are already complete")
+    number = start_round
     try:
-        for number in range(1, 4):
+        for number in range(start_round, 4):
             directory = output / f"round-{number}"
-            directory.mkdir()
+            directory.mkdir(exist_ok=resume and number == start_round)
             write_json_atomic(output / "status.json", {"status": "running", "round": number, "stage": "rollout"})
             rollout = RolloutConfig(
                 tasks_path=plan["train_tasks"], static_trajectories_path="",
@@ -56,6 +72,8 @@ def run(plan):
                 base_model=plan["base_model"], base_revision=None,
                 reward_mode="automatic", reward_config_path=None, group_size=4,
                 seed=42 + number * 100, action_temperature=0.8,
+                parallel_workers=8, trajectory_workers=4,
+                resume=resume and number == start_round,
             )
             run_stage("training.scheduler.collect_rollouts", rollout, directory)
             counts = json.loads((directory / "rollouts/rollout_manifest.json").read_text())["counts"]
@@ -84,9 +102,10 @@ def run(plan):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan", required=True)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     load_dotenv()
-    run(json.loads(Path(args.plan).read_text()))
+    run(json.loads(Path(args.plan).read_text()), resume=args.resume)
 
 
 if __name__ == "__main__":

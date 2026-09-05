@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from threading import Lock
 
 from dotenv import load_dotenv
 
@@ -42,6 +44,9 @@ class RolloutConfig:
     reward_mode: str = "static_agreement"
     judge_model: str = "z-ai/glm-5.3-flash"
     expert_model: str = "z-ai/glm-5.3-flash"
+    parallel_workers: int = 8
+    trajectory_workers: int = 4
+    resume: bool = False
 
     @classmethod
     def from_json(cls, path: str | Path) -> RolloutConfig:
@@ -55,6 +60,10 @@ def collect(config: RolloutConfig) -> dict[str, int]:
     tasks = load_tasks(config.tasks_path, split="train")
     if config.limit is not None:
         tasks = tasks[: config.limit]
+    if not tasks:
+        raise ValueError("rollout task set is empty")
+    if config.parallel_workers < 1 or config.trajectory_workers < 1:
+        raise ValueError("parallel worker counts must be positive")
     static_values = (TrajectoryStore(config.static_trajectories_path).load()
                      if config.reward_mode == "static_agreement" else [])
     static_by_key = {
@@ -89,13 +98,25 @@ def collect(config: RolloutConfig) -> dict[str, int]:
         reward_config = RewardConfig(
             **json.loads(Path(config.reward_config_path).read_text(encoding="utf-8"))
         )
-    trajectories = []
-    rows = []
     output = Path(config.output_dir)
     raw_store = TrajectoryStore(output / "raw-trajectories.jsonl")
-    reviewer = AutomaticReviewer(config.judge_model) if config.reward_mode == "automatic" else None
-    skipped_groups = []
-    for index, task in enumerate(tasks):
+    existing_raw = raw_store.load()
+    if existing_raw and not config.resume:
+        raise FileExistsError("rollout output exists; enable resume to reuse it")
+    existing_by_task = {}
+    for trajectory in existing_raw:
+        existing_by_task.setdefault(trajectory.task_id, []).append(trajectory)
+    review_path = output / "quality_reviews.json"
+    existing_reviews = (json.loads(review_path.read_text()) if review_path.exists() else {})
+    policy_lock = Lock()
+    raw_lock = Lock()
+
+    def append_raw(trajectory):
+        with raw_lock:
+            if not raw_store.contains(trajectory.trajectory_id):
+                raw_store.append(trajectory)
+
+    def run_group(index, task):
         task_config, selected_analysts = resolve_task_runtime(task, runtime_config)
         key = (task["task_id"], task.get("data_snapshot_id"))
         if config.reward_mode == "static_agreement" and key not in static_by_key:
@@ -103,6 +124,14 @@ def collect(config: RolloutConfig) -> dict[str, int]:
         static_reference = static_by_key.get(key)
         if static_reference is not None:
             _validate_static_reference(static_reference, task, selected_analysts)
+        known = existing_by_task.get(task["task_id"], [])
+        if len(known) > config.group_size:
+            raise ValueError(f"too many existing trajectories for {task['task_id']}")
+        reviewer = (AutomaticReviewer(
+            config.judge_model,
+            existing_reviews={key: value for key, value in existing_reviews.items()
+                              if key in {item.trajectory_id for item in known}},
+        ) if config.reward_mode == "automatic" else None)
         runner = GroupRolloutRunner(
             TradingAgentsSchedulerEnvironment(
                 task_config,
@@ -111,37 +140,73 @@ def collect(config: RolloutConfig) -> dict[str, int]:
             group_size=config.group_size,
             reward_config=reward_config,
             reward_scorer=reviewer,
-            trajectory_sink=raw_store.append,
+            trajectory_sink=append_raw,
+            policy_lock=policy_lock,
+            trajectory_workers=config.trajectory_workers,
         )
         try:
             scored = runner.run_task(
                 task, active_policy=active, reference_policy=reference,
                 static_reference=static_reference, run_id=config.run_id,
                 base_seed=config.seed + index * config.group_size,
+                existing_trajectories=known,
             )
         except ReviewUnavailable:
-            skipped_groups.append({"task_id": task["task_id"], "reason": "review_or_environment_unavailable"})
-            continue
-        finally:
-            if reviewer is not None:
-                write_json_atomic(output / "quality_reviews.json", reviewer.reviews)
-                write_json_atomic(output / "skipped_groups.json", {"groups": skipped_groups})
+            return index, [], [], reviewer.snapshot(), {
+                "task_id": task["task_id"], "reason": "review_or_environment_unavailable"
+            }
         if reviewer is not None and all(value.advantage == 0 for value in scored):
-            skipped_groups.append({"task_id": task["task_id"], "reason": "zero_group_reward_variance"})
-            continue
+            return index, [], [], reviewer.snapshot(), {
+                "task_id": task["task_id"], "reason": "zero_group_reward_variance"
+            }
         if any(not value.trajectory.steps for value in scored):
-            skipped_groups.append({"task_id": task["task_id"], "reason": "empty_trajectory"})
-            continue
-        trajectories.extend(value.trajectory for value in scored)
-        rows.extend(grpo_rows(scored))
+            return index, [], [], reviewer.snapshot() if reviewer else {}, {
+                "task_id": task["task_id"], "reason": "empty_trajectory"
+            }
+        return index, [value.trajectory for value in scored], grpo_rows(scored), \
+            reviewer.snapshot() if reviewer else {}, None
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(len(tasks), config.parallel_workers)) as pool:
+        futures = {pool.submit(run_group, index, task): task["task_id"]
+                   for index, task in enumerate(tasks)}
+        for future in as_completed(futures):
+            task_id = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                raise RuntimeError(f"rollout worker failed for {task_id}: {exc}") from exc
+            results[result[0]] = result
+            reviews = dict(existing_reviews)
+            skipped = []
+            for _, _, _, task_reviews, skip in (results[index] for index in sorted(results)):
+                reviews.update(task_reviews)
+                if skip is not None:
+                    skipped.append(skip)
+            if config.reward_mode == "automatic":
+                write_json_atomic(review_path, reviews)
+                write_json_atomic(output / "skipped_groups.json", {"groups": skipped})
+
+    trajectories = []
+    rows = []
+    reviews = dict(existing_reviews)
+    skipped_groups = []
+    for index in sorted(results):
+        _, group_trajectories, group_rows, group_reviews, skip = results[index]
+        trajectories.extend(group_trajectories)
+        rows.extend(group_rows)
+        reviews.update(group_reviews)
+        if skip is not None:
+            skipped_groups.append(skip)
 
     trajectory_store = TrajectoryStore(output / "trajectories.jsonl")
     for trajectory in trajectories:
         trajectory_store.append(trajectory)
     write_grpo_rows(rows, output / "grpo.jsonl")
     counts = {"tasks": len(tasks), "trajectories": len(trajectories), "rows": len(rows)}
-    if reviewer is not None:
+    if config.reward_mode == "automatic":
         counts["skipped_groups"] = len(skipped_groups)
+        write_json_atomic(review_path, reviews)
         write_json_atomic(output / "skipped_groups.json", {"groups": skipped_groups})
     write_json_atomic(
         output / "rollout_manifest.json",

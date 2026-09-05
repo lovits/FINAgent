@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
-import random
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from tradingagents.scheduler.contracts import ActionLogprobPolicy, SchedulerPolicy
+from tradingagents.scheduler.contracts import (
+    ActionLogprobPolicy, PolicyDecision, SchedulerContext, SchedulerPolicy,
+)
 from tradingagents.scheduler.policy import ReferenceScoredPolicy
 from tradingagents.scheduler.trajectory import SchedulerTrajectory
 
@@ -40,6 +42,37 @@ class ScoredRollout:
     advantage: float
 
 
+class SeededLockedReferencePolicy:
+    """Atomically sample active and reference adapters with per-trajectory RNG."""
+
+    def __init__(self, active, reference, lock, seed):
+        self.active = active
+        self.reference = reference
+        self.lock = lock
+        self.seed = seed
+        self.step = 0
+        self.policy_id = active.policy_id
+
+    def select_action(self, context: SchedulerContext) -> PolicyDecision:
+        import torch
+
+        with self.lock, torch.random.fork_rng():
+            torch.manual_seed(self.seed + self.step)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.seed + self.step)
+            self.step += 1
+            decision = self.active.select_action(context)
+            reference_logprobs = self.reference.action_logprobs(context)
+        if decision.action not in reference_logprobs:
+            raise ValueError("reference policy did not score the selected action")
+        return PolicyDecision(
+            decision.action, policy_id=decision.policy_id, logprob=decision.logprob,
+            decision_attempts=decision.decision_attempts,
+            correction_succeeded=decision.correction_succeeded,
+            metadata={**decision.metadata, "ref_logprob": reference_logprobs[decision.action]},
+        )
+
+
 class GroupRolloutRunner:
     def __init__(
         self,
@@ -49,6 +82,8 @@ class GroupRolloutRunner:
         reward_config: RewardConfig | None = None,
         reward_scorer: Callable | None = None,
         trajectory_sink: Callable | None = None,
+        policy_lock=None,
+        trajectory_workers: int = 1,
     ):
         if group_size < 2:
             raise ValueError("group_size must be at least two")
@@ -57,6 +92,10 @@ class GroupRolloutRunner:
         self.reward_config = reward_config or RewardConfig()
         self.reward_scorer = reward_scorer
         self.trajectory_sink = trajectory_sink
+        self.policy_lock = policy_lock
+        self.trajectory_workers = trajectory_workers
+        if trajectory_workers < 1:
+            raise ValueError("trajectory_workers must be positive")
 
     def run_task(
         self,
@@ -67,29 +106,45 @@ class GroupRolloutRunner:
         static_reference: SchedulerTrajectory | None,
         run_id: str,
         base_seed: int,
+        existing_trajectories: Iterable[SchedulerTrajectory] = (),
     ) -> list[ScoredRollout]:
         if static_reference is None and self.reward_scorer is None:
             raise ValueError("Static-agreement reward requires a Static reference")
-        policy = ReferenceScoredPolicy(active_policy, reference_policy)
-        trajectories = []
-        for index in range(self.group_size):
-            _set_seed(base_seed + index)
+        existing = {value.trajectory_id: value for value in existing_trajectories}
+
+        def generate(index):
+            identifier = f"{run_id}:{task['task_id']}:{index}"
+            if identifier in existing:
+                return existing[identifier]
+            policy = (SeededLockedReferencePolicy(
+                active_policy, reference_policy, self.policy_lock, base_seed + index
+            ) if self.policy_lock is not None else ReferenceScoredPolicy(
+                active_policy, reference_policy
+            ))
             result = self.environment.run(
                 task,
                 mode="learned",
                 run_id=run_id,
                 policy=policy,
-                trajectory_id=f"{run_id}:{task['task_id']}:{index}",
+                trajectory_id=identifier,
             )
             audit_trajectory(result.trajectory)
-            trajectories.append(result.trajectory)
-            if self.trajectory_sink is not None:
-                self.trajectory_sink(result.trajectory)
-        rewards = [
-            self.reward_scorer(value, static_reference) if self.reward_scorer is not None
-            else score_trajectory(value, static_reference, config=self.reward_config)
-            for value in trajectories
-        ]
+            return result.trajectory
+
+        with ThreadPoolExecutor(max_workers=min(self.group_size, self.trajectory_workers)) as pool:
+            trajectories = list(pool.map(generate, range(self.group_size)))
+        if self.trajectory_sink is not None:
+            for trajectory in trajectories:
+                if trajectory.trajectory_id not in existing:
+                    self.trajectory_sink(trajectory)
+
+        def score(value):
+            return (self.reward_scorer(value, static_reference)
+                    if self.reward_scorer is not None
+                    else score_trajectory(value, static_reference, config=self.reward_config))
+
+        with ThreadPoolExecutor(max_workers=min(self.group_size, self.trajectory_workers)) as pool:
+            rewards = list(pool.map(score, trajectories))
         advantages = group_relative_advantages([value.total for value in rewards])
         scored = []
         for trajectory, reward, advantage in zip(
@@ -134,14 +189,3 @@ def write_grpo_rows(rows: Iterable[Mapping[str, Any]], path: str | Path) -> None
         for row in rows:
             handle.write(json.dumps(dict(row), ensure_ascii=False, sort_keys=True))
             handle.write("\n")
-
-
-def _set_seed(seed: int) -> None:
-    random.seed(seed)
-    try:
-        import torch
-    except ImportError:
-        return
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)

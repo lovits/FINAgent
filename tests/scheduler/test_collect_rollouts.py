@@ -132,13 +132,16 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
     from training.scheduler.auto_review import AutoReward
 
     class Reviewer:
-        def __init__(self, *args):
-            self.reviews = {}
+        def __init__(self, *args, existing_reviews=None, **kwargs):
+            self.reviews = dict(existing_reviews or {})
 
         def __call__(self, trajectory, reference):
             score = trajectory.cost_total.agent_calls / 4
             self.reviews[trajectory.trajectory_id] = {"quality": score}
             return AutoReward(score, score, 1, 0)
+
+        def snapshot(self):
+            return dict(self.reviews)
 
     monkeypatch.setattr("training.scheduler.collect_rollouts.AutomaticReviewer", Reviewer)
     tasks_path = tmp_path / "tasks.jsonl"
@@ -198,3 +201,52 @@ def test_collect_rollouts_materializes_four_trajectory_credit_group(
     assert min(advantages.values()) < 0 < max(advantages.values())
     manifest = json.loads((tmp_path / "rollouts" / "rollout_manifest.json").read_text())
     assert manifest["config"]["group_size"] == 4
+
+
+def test_eight_task_groups_are_collected_concurrently(monkeypatch, tmp_path):
+    from threading import Barrier
+    from training.scheduler.auto_review import AutoReward
+
+    gate = Barrier(8, timeout=3)
+
+    class ParallelEnvironment(_Environment):
+        def run(self, task, **kwargs):
+            if str(kwargs["trajectory_id"]).endswith(":0"):
+                gate.wait()
+            return super().run(task, **kwargs)
+
+    class Reviewer:
+        def __init__(self, *args, existing_reviews=None, **kwargs):
+            self.reviews = dict(existing_reviews or {})
+
+        def __call__(self, trajectory, reference):
+            score = trajectory.cost_total.agent_calls / 4
+            self.reviews[trajectory.trajectory_id] = {"quality": score}
+            return AutoReward(score, score, 1, 0)
+
+        def snapshot(self):
+            return dict(self.reviews)
+
+    task_path = tmp_path / "tasks.jsonl"
+    task_path.write_text("".join(json.dumps({
+        "task_id": f"task-{index}", "ticker": "AAPL", "trade_date": "2026-01-05",
+        "data_snapshot_id": f"snapshot-{index}", "split": "train",
+        "selected_analysts": ["news"], "research_depth": "shallow",
+        "output_language": "Chinese",
+    }) + "\n" for index in range(8)))
+    monkeypatch.setattr("training.scheduler.collect_rollouts.AutomaticReviewer", Reviewer)
+    monkeypatch.setattr("training.scheduler.collect_rollouts.TradingAgentsSchedulerEnvironment",
+                        ParallelEnvironment)
+    monkeypatch.setattr("training.scheduler.collect_rollouts.load_shared_hf_scheduler_policies",
+                        lambda *a, **kw: (_ActivePolicy(), _ReferencePolicy()))
+    counts = collect(RolloutConfig(
+        tasks_path=str(task_path), static_trajectories_path="not-required",
+        active_adapter_path="active", reference_adapter_path="reference",
+        output_dir=str(tmp_path / "output"), run_id="parallel",
+        reward_mode="automatic", reward_config_path=None,
+        parallel_workers=8, trajectory_workers=1,
+    ))
+    assert counts == {"tasks": 8, "trajectories": 32, "rows": 64,
+                      "skipped_groups": 0}
+    raw = TrajectoryStore(tmp_path / "output/raw-trajectories.jsonl").load()
+    assert len(raw) == len({item.trajectory_id for item in raw}) == 32

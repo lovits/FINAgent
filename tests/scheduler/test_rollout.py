@@ -148,3 +148,60 @@ def test_judge_failure_retains_raw_group_and_produces_no_fake_score():
                         run_id="group", base_seed=42)
     assert len(raw) == 4
     assert all(trajectory.reward is None for trajectory in raw)
+
+
+def test_candidate_execution_and_reward_review_are_parallel():
+    from threading import Barrier, Lock
+
+    execution_gate = Barrier(4, timeout=2)
+    review_gate = Barrier(4, timeout=2)
+
+    class ParallelEnvironment(_Environment):
+        def run(self, *args, **kwargs):
+            execution_gate.wait()
+            return super().run(*args, **kwargs)
+
+    def reward(trajectory, reference):
+        from training.scheduler.auto_review import AutoReward
+        review_gate.wait()
+        value = int(trajectory.trajectory_id.rsplit(":", 1)[-1]) / 3
+        return AutoReward(value, value, 1, 0)
+
+    runner = GroupRolloutRunner(
+        ParallelEnvironment(), reward_scorer=reward,
+        policy_lock=Lock(), trajectory_workers=4,
+    )
+    scored = runner.run_task(
+        {"task_id": "task-1", "ticker": "AAPL", "trade_date": "2026-01-05",
+         "data_snapshot_id": "snapshot-1"},
+        active_policy=_ActivePolicy(), reference_policy=_ReferencePolicy(),
+        static_reference=None, run_id="parallel", base_seed=42,
+    )
+    assert len(scored) == 4
+    assert min(item.advantage for item in scored) < 0 < max(item.advantage for item in scored)
+
+
+def test_existing_trajectory_is_reused_without_execution():
+    existing = _Environment().run(
+        {"task_id": "task-1", "ticker": "AAPL", "trade_date": "2026-01-05",
+         "data_snapshot_id": "snapshot-1"}, mode="learned", run_id="resume",
+        policy=__import__("tradingagents.scheduler.policy", fromlist=["ReferenceScoredPolicy"]).ReferenceScoredPolicy(
+            _ActivePolicy(), _ReferencePolicy()), trajectory_id="resume:task-1:0",
+    ).trajectory
+
+    class CountingEnvironment(_Environment):
+        calls = 0
+
+        def run(self, *args, **kwargs):
+            self.calls += 1
+            return super().run(*args, **kwargs)
+
+    environment = CountingEnvironment()
+    runner = GroupRolloutRunner(environment)
+    runner.run_task(
+        {"task_id": "task-1", "ticker": "AAPL", "trade_date": "2026-01-05",
+         "data_snapshot_id": "snapshot-1"}, active_policy=_ActivePolicy(),
+        reference_policy=_ReferencePolicy(), static_reference=_static_reference(),
+        run_id="resume", base_seed=42, existing_trajectories=[existing],
+    )
+    assert environment.calls == 3

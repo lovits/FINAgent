@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from threading import Lock
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -148,13 +149,20 @@ def automatic_reward(trajectory: SchedulerTrajectory, review: dict[str, Any]) ->
 
 
 class AutomaticReviewer:
-    def __init__(self, model: str = "z-ai/glm-5.3-flash", *, transport=None, environ=None):
+    def __init__(self, model: str = "z-ai/glm-5.3-flash", *, transport=None,
+                 environ=None, existing_reviews=None):
         self.model = model
         self.transport = transport or requests.post
         self.environ = os.environ if environ is None else environ
-        self.reviews: dict[str, dict[str, Any]] = {}
+        self.reviews: dict[str, dict[str, Any]] = dict(existing_reviews or {})
+        self._reviews_lock = Lock()
 
     def assess(self, trajectory: SchedulerTrajectory) -> dict[str, Any]:
+        with self._reviews_lock:
+            cached = self.reviews.get(trajectory.trajectory_id)
+        if cached is not None:
+            trajectory.audit["quality_review"] = cached
+            return cached
         audit = audit_trajectory(trajectory)
         result = {
             "rubric_version": RUBRIC_VERSION,
@@ -179,9 +187,14 @@ class AutomaticReviewer:
             result.update(status="rule_rejected", attempts=0)
         else:
             result.update(self._assess_content(review_payload(trajectory)))
-        self.reviews[trajectory.trajectory_id] = result
+        with self._reviews_lock:
+            self.reviews[trajectory.trajectory_id] = result
         trajectory.audit["quality_review"] = result
         return result
+
+    def snapshot(self) -> dict[str, dict[str, Any]]:
+        with self._reviews_lock:
+            return dict(self.reviews)
 
     def __call__(self, trajectory, static_reference):
         # The baseline remains an A/B reference, never the judge's answer key.
