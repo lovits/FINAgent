@@ -62,8 +62,8 @@ def test_three_rounds_use_previous_model_and_skip_updates_without_reward_groups(
     monkeypatch.setattr("torch.cuda.is_available", lambda: True)
     if usable:
         run(plan)
-        assert events == ["evaluate"] + ["collect_rollouts", "train_grpo", "evaluate"] * 3
+        assert events == ["collect_rollouts", "train_grpo", "evaluate"] * 3
     else:
         with pytest.raises(RuntimeError, match="no parameter update"):
             run(plan)
-        assert events == ["evaluate", "collect_rollouts"]
+        assert events == ["collect_rollouts"]

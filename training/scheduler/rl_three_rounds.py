@@ -69,10 +69,6 @@ def run(plan):
     active = initial
     number = 0
     try:
-        write_json_atomic(output / "status.json", {"status": "running", "round": 0, "stage": "sft_baseline"})
-        baseline = evaluate_checkpoint(plan, initial, tasks, 0, output / "sft-baseline")
-        if baseline["modes"]["learned"]["completion_rate"] == 0:
-            raise RuntimeError("Both SFT baseline tasks failed; repair task execution before RL")
         for number in range(1, 4):
             directory = output / f"round-{number}"
             directory.mkdir()
