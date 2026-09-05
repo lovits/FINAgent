@@ -1,7 +1,6 @@
-"""Three sequential on-policy RL rounds, each followed by two fixed evaluations."""
+"""Three sequential on-policy RL training rounds with independent checkpoints."""
 import argparse
 from dataclasses import asdict
-import gc
 import json
 import os
 from pathlib import Path
@@ -13,21 +12,15 @@ from dotenv import load_dotenv
 from tradingagents.scheduler.store import write_json_atomic
 from .collect_rollouts import RolloutConfig
 from .generate import load_tasks
-from .model import SchedulerModelConfig, load_scheduler_model
 from .train_grpo import GRPOTrainConfig
-from .train_with_evaluation import evaluate_epoch
 
 
 def validate_plan(plan):
     training = load_tasks(plan["train_tasks"], split="train")
-    evaluation = load_tasks(plan["eval_tasks"])
     train_ids = {task["task_id"] for task in training}
-    eval_ids = {task["task_id"] for task in evaluation}
-    if len(training) != 8 or len(train_ids) != 8 or len(evaluation) != 2 or len(eval_ids) != 2:
-        raise ValueError("RL requires eight distinct training tasks and two distinct evaluation tasks")
-    if train_ids & eval_ids:
-        raise ValueError("RL training/evaluation task leakage")
-    return evaluation
+    if len(training) != 8 or len(train_ids) != 8:
+        raise ValueError("RL requires eight distinct training tasks")
+    return training
 
 
 def run_stage(module, config, directory):
@@ -38,27 +31,10 @@ def run_stage(module, config, directory):
                        stdout=log, stderr=subprocess.STDOUT, check=True)
 
 
-def evaluate_checkpoint(plan, adapter, tasks, number, directory):
-    import torch
-
-    model, tokenizer, _ = load_scheduler_model(SchedulerModelConfig(
-        base_model=plan["base_model"], base_revision=None, adapter_path=str(adapter),
-    ), training=False)
-    model.to("cuda")
-    model.config.use_cache = False
-    evaluate_epoch(number, model, tokenizer, Path(adapter), tasks=tasks,
-                   output=directory, max_length=32768,
-                   include_static=False, include_teacher=False)
-    del model, tokenizer
-    gc.collect()
-    torch.cuda.empty_cache()
-    return json.loads((directory / f"epoch-{number:02d}" / "comparison.json").read_text())
-
-
 def run(plan):
     import torch
 
-    tasks = validate_plan(plan)
+    validate_plan(plan)
     if not torch.cuda.is_available():
         raise RuntimeError("No CUDA GPU is available; RL was not started")
     output = Path(plan["output_dir"])
@@ -94,8 +70,10 @@ def run(plan):
             write_json_atomic(output / "status.json", {"status": "running", "round": number, "stage": "grpo_update"})
             run_stage("training.scheduler.train_grpo", training, directory)
             active = str(checkpoint)
-            write_json_atomic(output / "status.json", {"status": "running", "round": number, "stage": "evaluation"})
-            evaluate_checkpoint(plan, active, tasks, number, directory / "evaluation")
+            write_json_atomic(output / "status.json", {
+                "status": "running", "round": number,
+                "stage": "checkpoint_saved", "checkpoint": active,
+            })
         write_json_atomic(output / "status.json", {"status": "completed", "rounds": 3, "final_adapter": active})
     except BaseException as exc:
         write_json_atomic(output / "status.json", {"status": "needs_attention", "round": number,
