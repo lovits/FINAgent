@@ -107,3 +107,57 @@ def test_load_ohlcv_reuses_fresh_same_day_cache(tmp_path, monkeypatch):
 
     monkeypatch.setattr(su.yf, "download", _fail_download)
     su.load_ohlcv("AAPL", TODAY.strftime("%Y-%m-%d"))
+
+
+@pytest.mark.unit
+def test_rate_limit_falls_back_to_latest_usable_symbol_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(su, "get_config", lambda: {"data_cache_dir": str(tmp_path)})
+    monkeypatch.setattr(su.pd.Timestamp, "today", staticmethod(lambda: TODAY))
+    previous = tmp_path / "AAPL-YFin-data-2021-07-17-2026-07-18.csv"
+    pd.DataFrame({"Date": ["2026-07-17"], "Close": [123.0]}).to_csv(
+        previous, index=False
+    )
+
+    def _rate_limited(_):
+        raise su.YFRateLimitError
+
+    monkeypatch.setattr(su, "yf_retry", _rate_limited)
+    out = su.load_ohlcv("AAPL", TODAY.strftime("%Y-%m-%d"))
+
+    assert out["Close"].tolist() == [123.0]
+    current = tmp_path / "AAPL-YFin-data-2021-07-18-2026-07-19.csv"
+    assert current.exists(), "fallback should enter the normal TTL cache"
+
+
+@pytest.mark.unit
+def test_historical_request_reuses_previous_daily_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(su, "get_config", lambda: {"data_cache_dir": str(tmp_path)})
+    monkeypatch.setattr(su.pd.Timestamp, "today", staticmethod(lambda: TODAY))
+    previous = tmp_path / "AAPL-YFin-data-2021-07-17-2026-07-18.csv"
+    pd.DataFrame({"Date": ["2026-06-01"], "Close": [88.0]}).to_csv(
+        previous, index=False
+    )
+    monkeypatch.setattr(
+        su.yf,
+        "download",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("historical cache must avoid a new Yahoo request")
+        ),
+    )
+
+    out = su.load_ohlcv("AAPL", "2026-06-01")
+    assert out["Close"].tolist() == [88.0]
+
+
+@pytest.mark.unit
+def test_empty_rate_limited_download_falls_back_to_symbol_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(su, "get_config", lambda: {"data_cache_dir": str(tmp_path)})
+    monkeypatch.setattr(su.pd.Timestamp, "today", staticmethod(lambda: TODAY))
+    previous = tmp_path / "AAPL-YFin-data-2021-07-17-2026-07-18.csv"
+    pd.DataFrame({"Date": ["2026-07-17"], "Close": [77.0]}).to_csv(
+        previous, index=False
+    )
+    monkeypatch.setattr(su.yf, "download", lambda *args, **kwargs: pd.DataFrame())
+
+    out = su.load_ohlcv("AAPL", TODAY.strftime("%Y-%m-%d"))
+    assert out["Close"].tolist() == [77.0]

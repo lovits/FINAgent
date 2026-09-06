@@ -11,6 +11,7 @@ from tradingagents.web.service import (
     RunManager,
     RunRecord,
     _report_sections,
+    _runtime_config,
 )
 
 
@@ -125,3 +126,15 @@ def test_partial_debates_are_exposed_like_cli_reports() -> None:
     assert "Bull case" in reports["investment_plan"]
     assert "Bear case" in reports["investment_plan"]
     assert "Neutral risk" in reports["final_trade_decision"]
+
+
+def test_web_retry_always_starts_without_langgraph_checkpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "tradingagents.web.service.DEFAULT_CONFIG",
+        {
+            "checkpoint_enabled": True,
+            "scheduler_adapter_path": None,
+        },
+    )
+    config, *_ = _runtime_config(_request())
+    assert config["checkpoint_enabled"] is False

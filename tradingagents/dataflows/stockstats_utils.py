@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Annotated
 
 import pandas as pd
@@ -145,6 +146,29 @@ def _needs_same_day_refresh(data_file, curr_date_dt, today_date) -> bool:
     return time.time() - os.path.getmtime(data_file) > OHLCV_CACHE_TTL_SECONDS
 
 
+def _read_usable_cache(path: str | Path) -> pd.DataFrame | None:
+    try:
+        cached = pd.read_csv(path, on_bad_lines="skip", encoding="utf-8")
+    except (OSError, pd.errors.EmptyDataError, pd.errors.ParserError):
+        return None
+    if cached.empty or "Close" not in cached.columns:
+        return None
+    return cached
+
+
+def _latest_symbol_cache(cache_dir: str, safe_symbol: str) -> tuple[Path, pd.DataFrame] | None:
+    candidates = sorted(
+        Path(cache_dir).glob(f"{safe_symbol}-YFin-data-*.csv"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        cached = _read_usable_cache(path)
+        if cached is not None:
+            return path, cached
+    return None
+
+
 def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
@@ -185,34 +209,62 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     # transient rate limit). Treat an empty/columnless cache as a miss and
     # re-fetch rather than serving the poisoned file forever.
     data = None
+    cached_fallback = None
     if os.path.exists(data_file):
-        cached = pd.read_csv(data_file, on_bad_lines="skip", encoding="utf-8")
+        cached = _read_usable_cache(data_file)
         # Serve the cache only when it is usable and not a stale snapshot of the
         # day being requested (#1150); otherwise fall through and refetch.
-        if (
-            not cached.empty
-            and "Close" in cached.columns
-            and not _needs_same_day_refresh(data_file, curr_date_dt, today_date)
+        if cached is not None:
+            cached_fallback = cached
+        if cached is not None and not _needs_same_day_refresh(
+            data_file, curr_date_dt, today_date
         ):
             data = cached
 
+    if cached_fallback is None:
+        previous = _latest_symbol_cache(config["data_cache_dir"], safe_symbol)
+        if previous is not None:
+            _, cached_fallback = previous
+            if curr_date_dt.date() < today_date.date():
+                data = cached_fallback
+
     if data is None:
-        downloaded = yf_retry(lambda: yf.download(
-            canonical,
-            start=start_str,
-            end=end_str,
-            multi_level_index=False,
-            progress=False,
-            auto_adjust=True,
-        ))
-        downloaded = _ensure_date_column(downloaded.reset_index())
-        # Only cache real data — never persist an empty frame.
-        if downloaded.empty or "Close" not in downloaded.columns:
-            raise NoMarketDataError(
-                symbol, canonical, "Yahoo Finance returned no rows"
+        try:
+            downloaded = yf_retry(lambda: yf.download(
+                canonical,
+                start=start_str,
+                end=end_str,
+                multi_level_index=False,
+                progress=False,
+                auto_adjust=True,
+            ))
+        except YFRateLimitError:
+            if cached_fallback is None:
+                raise
+            logger.warning(
+                "Yahoo Finance rate limited for %s; using the latest usable cache for %s seconds",
+                canonical,
+                OHLCV_CACHE_TTL_SECONDS,
             )
-        downloaded.to_csv(data_file, index=False, encoding="utf-8")
-        data = downloaded
+            data = cached_fallback
+            data.to_csv(data_file, index=False, encoding="utf-8")
+        else:
+            downloaded = _ensure_date_column(downloaded.reset_index())
+            # Only cache real data — never persist an empty frame.
+            if downloaded.empty or "Close" not in downloaded.columns:
+                if cached_fallback is None:
+                    raise NoMarketDataError(
+                        symbol, canonical, "Yahoo Finance returned no rows"
+                    )
+                logger.warning(
+                    "Yahoo Finance returned no rows for %s; using the latest usable cache",
+                    canonical,
+                )
+                data = cached_fallback
+                data.to_csv(data_file, index=False, encoding="utf-8")
+            else:
+                downloaded.to_csv(data_file, index=False, encoding="utf-8")
+                data = downloaded
 
     data = _clean_dataframe(data)
 

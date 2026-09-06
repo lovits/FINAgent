@@ -28,6 +28,7 @@ def _config(tmp_path: Path, mode: str) -> dict:
         "results_dir": str(tmp_path / "results"),
         "data_cache_dir": str(tmp_path / "cache"),
         "memory_log_path": None,
+        "scheduler_adapter_path": None,
     }
 
 

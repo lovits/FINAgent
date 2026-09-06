@@ -252,6 +252,7 @@ def _runtime_config(
             "output_language": request.output_language,
             "max_debate_rounds": rounds,
             "max_risk_discuss_rounds": rounds,
+            "checkpoint_enabled": False,
             "scheduler_fallback_enabled": request.orchestration_mode == "static",
         }
     )
@@ -260,15 +261,24 @@ def _runtime_config(
 
 
 def _model_summary(config: dict[str, Any], mode: str) -> dict[str, str]:
+    base_model = str(config.get("scheduler_base_model") or "Local scheduler")
+    adapter = str(config.get("scheduler_adapter_path") or "")
     scheduler = {
         "static": "Static LangGraph",
         "teacher": str(config.get("teacher_model") or "Teacher model"),
-        "learned": str(config.get("scheduler_base_model") or "Local scheduler"),
+        "learned": f"{Path(base_model).name} + {_adapter_name(adapter)}",
     }[mode]
     return {
         "expert": str(config.get("quick_think_llm") or "Configured expert model"),
         "scheduler": scheduler,
     }
+
+
+def _adapter_name(value: str) -> str:
+    path = Path(value)
+    if path.name == "checkpoint" and path.parent.name.startswith("round-"):
+        return f"RL{path.parent.name.removeprefix('round-')}"
+    return path.name or "LoRA"
 
 
 def _node_kind(node_name: str) -> str:

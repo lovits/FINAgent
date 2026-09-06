@@ -32,8 +32,10 @@ class WebSettingsStore:
                 "masked_key": _mask_key(key),
                 "expert_model": self.expert_model,
                 "teacher_model": self.teacher_model,
-                "scheduler_base_model": str(DEFAULT_CONFIG["scheduler_base_model"]),
-                "scheduler_adapter": Path(adapter).name if adapter else None,
+                "scheduler_base_model": _model_label(
+                    str(DEFAULT_CONFIG["scheduler_base_model"])
+                ),
+                "scheduler_adapter": _adapter_label(adapter),
             }
 
     def update(self, value: WebSettingsUpdate) -> dict[str, object]:
@@ -71,3 +73,18 @@ def _mask_key(value: str) -> str | None:
     if len(value) <= 10:
         return "••••••••"
     return f"{value[:6]}…{value[-4:]}"
+
+
+def _model_label(value: str) -> str:
+    path = Path(value)
+    return path.name if path.is_absolute() else value
+
+
+def _adapter_label(value: str) -> str | None:
+    if not value:
+        return None
+    path = Path(value)
+    parent = path.parent.name
+    if path.name == "checkpoint" and parent.startswith("round-"):
+        return f"RL{parent.removeprefix('round-')}"
+    return path.name

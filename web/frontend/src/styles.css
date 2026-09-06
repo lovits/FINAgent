@@ -123,23 +123,24 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .process-heading h3 { margin: 0; font-size: 13px; }
 .process-heading > span { color: #93c5fd; font: 500 10px "Fira Code", monospace; }
 .workflow-canvas { overflow-x: auto; }
-.workflow-canvas svg { width: 100%; min-width: 1080px; display: block; }
+.workflow-canvas svg { width: 100%; min-width: 1000px; display: block; }
 .workflow-canvas marker path { fill: context-stroke; }
 .lane-divider { fill: none; stroke: #233047; stroke-width: 1; stroke-dasharray: 4 7; }
 .stage-shell rect { fill: rgba(15,23,42,.68); stroke: #273449; stroke-width: 1; }
-.stage-index { fill: #22c55e; font: 600 10px "Fira Code", monospace; }
-.stage-label { fill: #dbe4f0; font: 600 13px "Fira Sans", sans-serif; }
+.stage-index { fill: #22c55e; font: 600 12px "Fira Code", monospace; }
+.stage-label { fill: #f1f5f9; font: 600 15px "Fira Sans", sans-serif; }
+.route-caption { fill: #64748b; font: 500 11px "Fira Code", monospace; letter-spacing: .04em; }
 .flow-link { fill: none; stroke: #3b4a61; stroke-width: 2; color: #3b4a61; }
 .flow-link.active { stroke: #22c55e; color: #22c55e; stroke-dasharray: 7 5; animation: trace-flow 1.2s linear infinite; }
 .router-node rect, .final-node rect { fill: #111827; stroke: #334155; }
 .router-node circle { fill: #60a5fa; }
-.router-node text, .final-node text { fill: #e2e8f0; font: 600 12px "Fira Sans", sans-serif; }
+.router-node text, .final-node text { fill: #f1f5f9; font: 600 14px "Fira Sans", sans-serif; }
 .router-node.running rect { stroke: #60a5fa; }
 .router-node.completed rect, .final-node.completed rect { fill: rgba(34,197,94,.1); stroke: #22c55e; }
 .svg-agent-node rect { fill: #111827; stroke: #334155; stroke-width: 1; }
 .svg-agent-node circle { fill: #64748b; }
-.svg-agent-node .agent-name { fill: #e2e8f0; font: 600 12px "Fira Sans", sans-serif; }
-.node-state { fill: #8290a5 !important; font: 500 9.5px "Fira Code", monospace !important; }
+.svg-agent-node .agent-name { fill: #f1f5f9; font: 600 13px "Fira Sans", sans-serif; }
+.node-state { fill: #94a3b8 !important; font: 500 11px "Fira Code", monospace !important; }
 .svg-agent-node.clickable { cursor: pointer; }
 .svg-agent-node.clickable:hover rect, .svg-agent-node.clickable:focus rect { stroke: #f8fafc; stroke-width: 1.5; }
 .svg-agent-node.running rect { fill: rgba(96,165,250,.12); stroke: #60a5fa; stroke-width: 1.5; }
@@ -159,18 +160,17 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .panel-title { min-height: 52px; justify-content: flex-start; padding: 0 16px; border-bottom: 1px solid var(--border); }
 .panel-title h3 { margin: 0; font-size: 13px; }
 .panel-title > span { margin-left: auto; color: var(--muted); font: 11px "Fira Code", monospace; }
-.timeline { max-height: 690px; overflow: auto; padding: 17px; }
-.timeline-item { width: 100%; position: relative; display: grid; grid-template-columns: 28px 1fr; gap: 10px; min-height: 58px; padding: 0; color: inherit; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.timeline { max-height: 690px; overflow: auto; padding: 12px; }
+.timeline-item { width: 100%; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 11px; min-height: 64px; margin-bottom: 8px; padding: 9px 11px; color: inherit; text-align: left; background: linear-gradient(135deg, rgba(23,32,51,.95), rgba(11,17,32,.9)); border: 1px solid var(--border); border-radius: 11px; cursor: pointer; transition: border-color .18s, transform .18s, background .18s; }
+.timeline-item:hover { border-color: #52647d; background: #172033; transform: translateX(2px); }
 .timeline-item:hover strong { color: #fff; }
-.timeline-item::after { content: ""; position: absolute; top: 28px; bottom: 0; left: 13px; width: 1px; background: var(--border); }
-.timeline-item:last-of-type::after { display: none; }
-.timeline-icon { width: 28px; height: 28px; display: grid; place-items: center; color: #86efac; background: #10241b; border: 1px solid #1f6d43; border-radius: 50%; z-index: 1; }
+.timeline-icon { width: 34px; height: 34px; display: grid; place-items: center; color: #86efac; background: #10241b; border: 1px solid #1f6d43; border-radius: 9px; }
 .timeline-item.scheduler .timeline-icon { color: #93c5fd; background: #10203a; border-color: #31598a; }
 .timeline-item.tool .timeline-icon { color: #fde68a; background: #29200d; border-color: #705b22; }
-.timeline-item small, .timeline-item strong, .timeline-item span { display: block; }
-.timeline-item small { color: #64748b; font: 9px "Fira Code", monospace; letter-spacing: .08em; }
-.timeline-item strong { margin-top: 3px; font-size: 12px; }
-.timeline-item span { margin-top: 3px; color: var(--blue); font: 10px "Fira Code", monospace; }
+.timeline-copy, .timeline-copy > * { display: block; }
+.timeline-copy small { color: #64748b; font: 10px "Fira Code", monospace; letter-spacing: .08em; }
+.timeline-copy strong { margin-top: 4px; font-size: 13px; }
+.timeline-copy .timeline-action { margin-top: 4px; color: var(--blue); font: 10px "Fira Code", monospace; }
 .waiting { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .pulse { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulse 1.4s infinite; }
 

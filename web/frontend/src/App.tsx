@@ -542,7 +542,7 @@ export default function App() {
 
 function TimelineItem({ node, index, onSelect }: { node: NodeEvent; index: number; onSelect: (node: string) => void }) {
   const Icon = node.kind === "tool" ? Wrench : node.kind === "scheduler" ? Bot : Check;
-  return <button className={`timeline-item ${node.kind} ${node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span>{actionLabel(node.selected_action)}</span>}</span></button>;
+  return <button className={`timeline-item ${node.kind} ${node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}</span></button>;
 }
 
 const ACTION_NODE: Record<string, string> = {
@@ -604,8 +604,8 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
   };
   const analystNodes = analysts.map((key, index) => ({
     name: ANALYST_NODE[key],
-    x: 46 + (index % 2) * 134,
-    y: 116 + Math.floor(index / 2) * 68,
+    x: 50 + (index % 2) * 135,
+    y: 142 + Math.floor(index / 2) * 72,
   }));
   const hasStarted = (names: string[]) => names.some((name) => nodeState(name) !== "pending");
   const researchNodes = ["Bull Researcher", "Bear Researcher", "Research Manager"];
@@ -618,7 +618,7 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
       <span>{mode === "static" ? "固定LangGraph" : "动态Scheduler路径"}</span>
     </div>
     <div className="workflow-canvas">
-      <svg viewBox="0 0 1460 300" role="img" aria-labelledby="workflow-title workflow-description">
+      <svg viewBox="0 0 1000 590" role="img" aria-labelledby="workflow-title workflow-description">
         <title id="workflow-title">TradingAgents实时分析流程</title>
         <desc id="workflow-description">从编排入口、分析师团队、研究辩论、交易、风险决策到最终报告的实时节点状态。</desc>
         <defs>
@@ -631,46 +631,47 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
           </filter>
         </defs>
 
-        <path className="lane-divider" d="M28 70H1432" />
+        <path className="lane-divider" d="M30 78H970M30 326H970" />
 
         <g className={`router-node ${events.length ? "completed" : "running"}`}>
-          <rect x="28" y="18" width="252" height="42" rx="12" />
-          <circle cx="50" cy="39" r="7" />
-          <text x="66" y="44">{mode === "static" ? "Static LangGraph Router" : "Dynamic Scheduler"}</text>
-          <text className="node-state" x="263" y="44" textAnchor="end">{events.length ? "已启动" : "初始化"}</text>
+          <rect x="30" y="18" width="300" height="48" rx="13" />
+          <circle cx="54" cy="42" r="7" />
+          <text x="72" y="47">{mode === "static" ? "Static LangGraph Router" : "Dynamic Scheduler"}</text>
+          <text className="node-state" x="312" y="47" textAnchor="end">{events.length ? "已启动" : "初始化"}</text>
         </g>
 
-        <path className="flow-link active" d="M154 60V76" markerEnd="url(#flow-arrow)" />
-        <FlowLink from={310} to={336} active={hasStarted(researchNodes)} />
-        <FlowLink from={626} to={652} active={nodeState("Trader") !== "pending"} />
-        <FlowLink from={914} to={940} active={hasStarted(riskNodes)} />
-        <FlowLink from={1082} to={1108} active={nodeState("Portfolio Manager") !== "pending"} />
-        <FlowLink from={1368} to={1392} active={finished} />
+        <FlowPath d="M180 66V92" active />
+        <FlowPath d="M330 194H360" active={hasStarted(researchNodes)} />
+        <FlowPath d="M660 194H690" active={nodeState("Trader") !== "pending"} />
+        <FlowPath d="M830 294V316H16V458H30" active={hasStarted(riskNodes)} />
+        <FlowPath d="M330 458H360" active={nodeState("Portfolio Manager") !== "pending"} />
+        <FlowPath d="M660 458H690" active={finished} />
 
-        <StageShell x={28} width={282} index="01" label="多源分析" />
+        <StageShell x={30} y={96} width={300} height={198} index="01" label="多源分析" />
         {analystNodes.map((node) => <SvgAgentNode {...node} state={nodeState(node.name)} onSelect={canOpen(node.name) ? onSelectNode : undefined} key={node.name} />)}
 
-        <StageShell x={336} width={290} index="02" label="研究辩论" />
-        <SvgAgentNode x={354} y={116} name="Bull Researcher" state={nodeState("Bull Researcher")} onSelect={canOpen("Bull Researcher") ? onSelectNode : undefined} />
-        <SvgAgentNode x={498} y={116} name="Bear Researcher" state={nodeState("Bear Researcher")} onSelect={canOpen("Bear Researcher") ? onSelectNode : undefined} />
-        <SvgAgentNode x={402} y={184} name="Research Manager" state={nodeState("Research Manager")} onSelect={canOpen("Research Manager") ? onSelectNode : undefined} wide />
+        <StageShell x={360} y={96} width={300} height={198} index="02" label="研究辩论" />
+        <SvgAgentNode x={380} y={142} name="Bull Researcher" state={nodeState("Bull Researcher")} onSelect={canOpen("Bull Researcher") ? onSelectNode : undefined} />
+        <SvgAgentNode x={515} y={142} name="Bear Researcher" state={nodeState("Bear Researcher")} onSelect={canOpen("Bear Researcher") ? onSelectNode : undefined} />
+        <SvgAgentNode x={424} y={214} name="Research Manager" state={nodeState("Research Manager")} onSelect={canOpen("Research Manager") ? onSelectNode : undefined} wide />
 
-        <StageShell x={652} width={262} index="03" label="交易计划" />
-        <SvgAgentNode x={711} y={150} name="Trader" state={nodeState("Trader")} onSelect={canOpen("Trader") ? onSelectNode : undefined} wide />
+        <StageShell x={690} y={96} width={280} height={198} index="03" label="交易计划" />
+        <SvgAgentNode x={744} y={170} name="Trader" state={nodeState("Trader")} onSelect={canOpen("Trader") ? onSelectNode : undefined} wide />
 
-        <StageShell x={940} width={142} index="04" label="风险评估" />
-        <SvgAgentNode x={950} y={104} name="Aggressive Analyst" state={nodeState("Aggressive Analyst")} onSelect={canOpen("Aggressive Analyst") ? onSelectNode : undefined} compact />
-        <SvgAgentNode x={950} y={159} name="Conservative Analyst" state={nodeState("Conservative Analyst")} onSelect={canOpen("Conservative Analyst") ? onSelectNode : undefined} compact />
-        <SvgAgentNode x={950} y={214} name="Neutral Analyst" state={nodeState("Neutral Analyst")} onSelect={canOpen("Neutral Analyst") ? onSelectNode : undefined} compact />
+        <text className="route-caption" x="30" y="344">进入风险评估与最终决策</text>
+        <StageShell x={30} y={356} width={300} height={204} index="04" label="风险评估" />
+        <SvgAgentNode x={50} y={402} name="Aggressive Analyst" state={nodeState("Aggressive Analyst")} onSelect={canOpen("Aggressive Analyst") ? onSelectNode : undefined} />
+        <SvgAgentNode x={185} y={402} name="Conservative Analyst" state={nodeState("Conservative Analyst")} onSelect={canOpen("Conservative Analyst") ? onSelectNode : undefined} />
+        <SvgAgentNode x={94} y={474} name="Neutral Analyst" state={nodeState("Neutral Analyst")} onSelect={canOpen("Neutral Analyst") ? onSelectNode : undefined} wide />
 
-        <StageShell x={1108} width={260} index="05" label="组合决策" />
-        <SvgAgentNode x={1167} y={150} name="Portfolio Manager" state={nodeState("Portfolio Manager")} onSelect={canOpen("Portfolio Manager") ? onSelectNode : undefined} wide />
+        <StageShell x={360} y={356} width={300} height={204} index="05" label="组合决策" />
+        <SvgAgentNode x={424} y={432} name="Portfolio Manager" state={nodeState("Portfolio Manager")} onSelect={canOpen("Portfolio Manager") ? onSelectNode : undefined} wide />
 
+        <StageShell x={690} y={356} width={280} height={204} index="06" label="报告交付" />
         <g className={`final-node ${finished ? "completed" : "pending"}`}>
-          <rect x="1392" y="122" width="56" height="96" rx="14" />
-          <text x="1420" y="156" textAnchor="middle">报告</text>
-          <text x="1420" y="177" textAnchor="middle">输出</text>
-          <text className="node-state" x="1420" y="201" textAnchor="middle">{finished ? "完成" : "等待"}</text>
+          <rect x="744" y="416" width="172" height="92" rx="14" />
+          <text x="830" y="450" textAnchor="middle">完整分析报告</text>
+          <text className="node-state" x="830" y="478" textAnchor="middle">{finished ? "已生成" : "等待汇总"}</text>
         </g>
       </svg>
     </div>
@@ -683,31 +684,30 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
 
 type GraphNodeState = "pending" | "running" | "completed" | "skipped";
 
-function FlowLink({ from, to, active }: { from: number; to: number; active: boolean }) {
-  return <path className={`flow-link ${active ? "active" : ""}`} d={`M${from} 167H${to}`} markerEnd="url(#flow-arrow)" />;
+function FlowPath({ d, active }: { d: string; active: boolean }) {
+  return <path className={`flow-link ${active ? "active" : ""}`} d={d} markerEnd="url(#flow-arrow)" />;
 }
 
-function StageShell({ x, width, index, label }: { x: number; width: number; index: string; label: string }) {
-  return <g className="stage-shell"><rect x={x} y="80" width={width} height="194" rx="16" /><text className="stage-index" x={x + 16} y="103">{index}</text><text className="stage-label" x={x + 46} y="103">{label}</text></g>;
+function StageShell({ x, y, width, height, index, label }: { x: number; y: number; width: number; height: number; index: string; label: string }) {
+  return <g className="stage-shell"><rect x={x} y={y} width={width} height={height} rx="16" /><text className="stage-index" x={x + 18} y={y + 29}>{index}</text><text className="stage-label" x={x + 54} y={y + 29}>{label}</text></g>;
 }
 
-function SvgAgentNode({ x, y, name, state, wide = false, compact = false, onSelect }: {
+function SvgAgentNode({ x, y, name, state, wide = false, onSelect }: {
   x: number;
   y: number;
   name: string;
   state: GraphNodeState;
   wide?: boolean;
-  compact?: boolean;
   onSelect?: (node: string) => void;
 }) {
-  const width = compact ? 122 : wide ? 172 : 128;
+  const width = wide ? 172 : 128;
   const label = name.replace(" Analyst", "").replace(" Researcher", "").replace(" Manager", " Mgr");
   const status = { pending: "等待", running: "运行中", completed: "完成", skipped: "未调用" }[state];
   return <g className={`svg-agent-node ${state} ${onSelect ? "clickable" : ""}`} filter={state === "running" ? "url(#active-glow)" : undefined} role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} onClick={() => onSelect?.(name)} onKeyDown={(event) => { if (onSelect && (event.key === "Enter" || event.key === " ")) onSelect(name); }}>
-    <rect x={x} y={y} width={width} height="50" rx="10" />
-    <circle cx={x + 14} cy={y + 16} r="5" />
-    <text className="agent-name" x={x + 25} y={y + 20}>{label}</text>
-    <text className="node-state" x={x + 14} y={y + 39}>{status}</text>
+    <rect x={x} y={y} width={width} height="56" rx="11" />
+    <circle cx={x + 15} cy={y + 18} r="5" />
+    <text className="agent-name" x={x + 27} y={y + 23}>{label}</text>
+    <text className="node-state" x={x + 15} y={y + 45}>{status}</text>
   </g>;
 }
 
