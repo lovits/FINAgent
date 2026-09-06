@@ -4,6 +4,7 @@ from time import monotonic
 
 import pytest
 
+from tradingagents.scheduler.cost_tracker import CostSnapshot
 from tradingagents.web.schemas import CreateRunRequest
 from tradingagents.web.service import (
     GraphEventProjector,
@@ -104,6 +105,84 @@ def test_projector_keeps_cli_message_and_tool_details() -> None:
     assert data["tool_calls"] == [
         {"name": "get_stock_data", "args": {"ticker": "NVDA"}}
     ]
+
+
+def test_projector_keeps_all_tool_results_and_live_usage() -> None:
+    class CostTracker:
+        def snapshot(self) -> CostSnapshot:
+            return CostSnapshot(
+                llm_calls=1,
+                tool_calls=2,
+                input_tokens=120,
+                output_tokens=30,
+            )
+
+    record = RunRecord("run", _request())
+    projector = GraphEventProjector(record, CostTracker())
+    projector(
+        "updates",
+        {
+            "tools_market": {
+                "messages": [
+                    {
+                        "type": "tool",
+                        "name": "get_stock_data",
+                        "tool_call_id": "call-1",
+                        "content": "price rows",
+                    },
+                    {
+                        "type": "tool",
+                        "name": "get_indicators",
+                        "tool_call_id": "call-2",
+                        "content": "indicator rows",
+                    },
+                ]
+            }
+        },
+    )
+
+    data = record.events[0]["data"]
+    assert [message["name"] for message in data["messages"]] == [
+        "get_stock_data",
+        "get_indicators",
+    ]
+    assert data["usage"]["input_tokens"] == 120
+    assert data["cumulative_metrics"]["output_tokens"] == 30
+    assert record.metrics["tool_calls"] == 2
+
+
+def test_projector_adds_scheduler_usage_to_expert_totals() -> None:
+    class CostTracker:
+        def snapshot(self) -> CostSnapshot:
+            return CostSnapshot(llm_calls=2, input_tokens=200, output_tokens=50)
+
+    record = RunRecord("run", _request())
+    projector = GraphEventProjector(record, CostTracker())
+    projector(
+        "updates",
+        {
+            "Scheduler": {
+                "scheduler_action": "<ACT_MARKET>",
+                "scheduler_valid_actions": ["<ACT_MARKET>"],
+                "scheduler_decision_metadata": {
+                    "usage": {
+                        "llm_calls": 1,
+                        "input_tokens": 40,
+                        "output_tokens": 1,
+                    }
+                },
+            }
+        },
+    )
+
+    data = record.events[0]["data"]
+    assert data["usage"]["input_tokens"] == 240
+    assert data["cumulative_metrics"] == {
+        "llm_calls": 3,
+        "tool_calls": 0,
+        "input_tokens": 240,
+        "output_tokens": 51,
+    }
 
 
 def test_cancel_stops_at_next_graph_event() -> None:

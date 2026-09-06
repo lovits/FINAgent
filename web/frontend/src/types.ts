@@ -24,6 +24,22 @@ export interface RunSnapshot {
   event_count: number;
 }
 
+export interface UsageMetrics {
+  llm_calls: number;
+  tool_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface TraceMessage {
+  type: string;
+  content: string;
+  content_length: number;
+  truncated: boolean;
+  name?: string;
+  tool_call_id?: string;
+}
+
 export interface NodeEvent {
   node: string;
   kind: "scheduler" | "tool" | "agent";
@@ -32,7 +48,14 @@ export interface NodeEvent {
   valid_actions?: string[];
   produced_fields?: string[];
   message?: string | null;
-  tool_calls?: Array<{ name: string; args: unknown }>;
+  messages?: TraceMessage[];
+  tool_calls?: Array<{ id?: string; name: string; args: unknown }>;
+  timestamp_ms?: number;
+  usage?: UsageMetrics;
+  cumulative_metrics?: UsageMetrics;
+  scheduler_step?: number;
+  scheduler_history?: string[];
+  policy_id?: string;
 }
 
 export interface ReportEvent {

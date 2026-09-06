@@ -12,7 +12,7 @@ from typing import Any
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.scheduler.cost_tracker import SchedulerCostCallback
+from tradingagents.scheduler.cost_tracker import CostSnapshot, SchedulerCostCallback
 
 from .schemas import CreateRunRequest
 
@@ -31,6 +31,9 @@ REPORT_FIELDS = {
 }
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+TRACE_CONTENT_LIMIT = 20_000
+TRACE_MESSAGE_LIMIT = 24
+METRIC_KEYS = ("llm_calls", "tool_calls", "input_tokens", "output_tokens")
 
 
 class RunCancelled(RuntimeError):
@@ -103,9 +106,16 @@ class RunRecord:
 
 
 class GraphEventProjector:
-    def __init__(self, record: RunRecord):
+    def __init__(
+        self,
+        record: RunRecord,
+        cost_tracker: SchedulerCostCallback | None = None,
+    ):
         self.record = record
+        self.cost_tracker = cost_tracker
         self._reports: dict[str, str] = {}
+        self._last_expert_snapshot = CostSnapshot()
+        self._scheduler_metrics = _empty_metrics()
 
     def __call__(self, stream_mode: str, payload: object) -> None:
         if self.record.cancel_requested.is_set():
@@ -116,19 +126,61 @@ class GraphEventProjector:
             self._project_reports(payload)
 
     def _project_nodes(self, payload: dict[str, Any]) -> None:
-        for node_name, update in payload.items():
-            if node_name.startswith("Msg Clear"):
-                continue
+        visible = [
+            (node_name, update)
+            for node_name, update in payload.items()
+            if not node_name.startswith("Msg Clear")
+        ]
+        if not visible:
+            return
+        expert_snapshot = (
+            self.cost_tracker.snapshot() if self.cost_tracker else CostSnapshot()
+        )
+        expert_delta = _snapshot_delta(expert_snapshot, self._last_expert_snapshot)
+        self._last_expert_snapshot = expert_snapshot
+        for index, (node_name, update) in enumerate(visible):
+            usage = expert_delta if index == 0 else _empty_metrics()
+            if node_name == "Scheduler":
+                scheduler_usage = _scheduler_usage(update)
+                self._scheduler_metrics = _add_metrics(
+                    self._scheduler_metrics, scheduler_usage
+                )
+                usage = _add_metrics(usage, scheduler_usage)
+            cumulative = self.metrics_snapshot(expert_snapshot)
             data = {
                 "node": node_name,
                 "kind": _node_kind(node_name),
                 "status": _node_status(node_name, update),
+                "timestamp_ms": _now_ms(),
+                "usage": usage,
+                "cumulative_metrics": cumulative,
             }
             data.update(_node_details(update))
             if isinstance(update, dict) and update.get("scheduler_action"):
                 data["selected_action"] = update["scheduler_action"]
                 data["valid_actions"] = update.get("scheduler_valid_actions", [])
+                data["scheduler_step"] = update.get("scheduler_step")
+                data["scheduler_history"] = update.get("scheduler_history", [])
+                data["policy_id"] = update.get("scheduler_policy_id")
             self.record.emit("node.progress", data)
+            self.record.metrics = dict(cumulative)
+
+    def metrics_snapshot(
+        self, expert_snapshot: CostSnapshot | None = None
+    ) -> dict[str, int]:
+        current = expert_snapshot or (
+            self.cost_tracker.snapshot() if self.cost_tracker else CostSnapshot()
+        )
+        expert = {
+            "llm_calls": current.llm_calls,
+            "tool_calls": current.tool_calls,
+            "input_tokens": current.input_tokens,
+            "output_tokens": current.output_tokens,
+        }
+        return {
+            key: int(expert[key]) + int(self._scheduler_metrics[key])
+            for key in METRIC_KEYS
+        }
 
     def _project_reports(self, state: dict[str, Any]) -> None:
         reports = _report_sections(state)
@@ -201,6 +253,7 @@ class RunManager:
         if record.cancel_requested.is_set():
             raise RunCancelled("analysis cancelled before execution")
         cost_tracker = SchedulerCostCallback()
+        projector = GraphEventProjector(record, cost_tracker)
         graph = self.graph_factory(
             analysts,
             config=config,
@@ -211,19 +264,13 @@ class RunManager:
             ticker,
             str(record.request.analysis_date),
             asset_type=asset_type,
-            on_graph_event=GraphEventProjector(record),
+            on_graph_event=projector,
         )
         destination = Path(config["results_dir"]) / "web" / record.run_id
         report_path = graph.save_reports(final_state, ticker, destination)
         record.complete_report = report_path.read_text(encoding="utf-8")
         record.signal = str(signal)
-        snapshot = cost_tracker.snapshot()
-        record.metrics = {
-            "llm_calls": snapshot.llm_calls,
-            "tool_calls": snapshot.tool_calls,
-            "input_tokens": snapshot.input_tokens,
-            "output_tokens": snapshot.output_tokens,
-        }
+        record.metrics = projector.metrics_snapshot()
         record.status = "completed"
         record.emit(
             "run.completed",
@@ -301,24 +348,47 @@ def _node_details(update: object) -> dict[str, object]:
         return {}
     produced_fields = [key for key in REPORT_FIELDS if update.get(key)]
     messages = update.get("messages") or []
-    message = _last_message(messages)
+    message_records = _message_records(messages)
+    message = message_records[-1]["content"] if message_records else None
     tool_calls = _tool_calls(messages)
     return {
         "produced_fields": produced_fields,
         "message": message,
+        "messages": message_records,
         "tool_calls": tool_calls,
     }
 
 
-def _last_message(messages: object) -> str | None:
-    if not isinstance(messages, (list, tuple)) or not messages:
-        return None
-    value = messages[-1]
-    content = value.get("content") if isinstance(value, dict) else getattr(value, "content", None)
-    if content is None:
-        return None
-    text = content if isinstance(content, str) else str(content)
-    return text[:6000]
+def _message_records(messages: object) -> list[dict[str, object]]:
+    if not isinstance(messages, (list, tuple)):
+        return []
+    result = []
+    for value in messages[-TRACE_MESSAGE_LIMIT:]:
+        content = (
+            value.get("content")
+            if isinstance(value, dict)
+            else getattr(value, "content", None)
+        )
+        if content is None:
+            continue
+        text = content if isinstance(content, str) else str(content)
+        message_type = (
+            value.get("type")
+            if isinstance(value, dict)
+            else getattr(value, "type", type(value).__name__)
+        )
+        record: dict[str, object] = {
+            "type": str(message_type or type(value).__name__),
+            "content": text[:TRACE_CONTENT_LIMIT],
+            "content_length": len(text),
+            "truncated": len(text) > TRACE_CONTENT_LIMIT,
+        }
+        for key in ("name", "tool_call_id"):
+            item = value.get(key) if isinstance(value, dict) else getattr(value, key, None)
+            if item:
+                record[key] = str(item)
+        result.append(record)
+    return result
 
 
 def _tool_calls(messages: object) -> list[dict[str, object]]:
@@ -330,8 +400,49 @@ def _tool_calls(messages: object) -> list[dict[str, object]]:
     for call in calls or []:
         name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
         args = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
-        result.append({"name": str(name or "unknown"), "args": _safe_value(args)})
+        identifier = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
+        item = {"name": str(name or "unknown"), "args": _safe_value(args)}
+        if identifier:
+            item["id"] = str(identifier)
+        result.append(item)
     return result
+
+
+def _empty_metrics() -> dict[str, int]:
+    return dict.fromkeys(METRIC_KEYS, 0)
+
+
+def _snapshot_delta(current: CostSnapshot, previous: CostSnapshot) -> dict[str, int]:
+    return {
+        "llm_calls": max(0, current.llm_calls - previous.llm_calls),
+        "tool_calls": max(0, current.tool_calls - previous.tool_calls),
+        "input_tokens": max(0, current.input_tokens - previous.input_tokens),
+        "output_tokens": max(0, current.output_tokens - previous.output_tokens),
+    }
+
+
+def _scheduler_usage(update: object) -> dict[str, int]:
+    if not isinstance(update, dict):
+        return _empty_metrics()
+    metadata = update.get("scheduler_decision_metadata")
+    usage = metadata.get("usage") if isinstance(metadata, dict) else None
+    if not isinstance(usage, dict):
+        return _empty_metrics()
+    return {
+        key: _nonnegative_int(usage.get(key))
+        for key in METRIC_KEYS
+    }
+
+
+def _nonnegative_int(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _add_metrics(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
+    return {key: int(left[key]) + int(right[key]) for key in METRIC_KEYS}
 
 
 def _safe_value(value: object) -> object:

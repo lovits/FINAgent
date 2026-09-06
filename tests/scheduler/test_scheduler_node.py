@@ -1,6 +1,7 @@
 import pytest
 
 from tradingagents.scheduler.actions import SchedulerAction
+from tradingagents.scheduler.contracts import PolicyDecision
 from tradingagents.scheduler.policy import CallableSchedulerPolicy
 from tradingagents.scheduler.scheduler_node import (
     SchedulerNode,
@@ -41,6 +42,26 @@ def test_scheduler_node_records_a_legal_decision() -> None:
     assert update["scheduler_step"] == 1
     assert update["scheduler_agent_calls"] == 1
     assert observed[0][0].serialized_state.endswith("<SCHEDULER_ACTION>\n")
+
+
+def test_scheduler_node_exposes_decision_metadata_for_web_trace() -> None:
+    node = SchedulerNode(
+        CallableSchedulerPolicy(
+            lambda _: PolicyDecision(
+                SchedulerAction.MARKET,
+                policy_id="test-policy",
+                metadata={"usage": {"input_tokens": 25, "output_tokens": 1}},
+            )
+        ),
+        ("market",),
+    )
+
+    update = node(_state())
+
+    assert update["scheduler_decision_metadata"]["usage"] == {
+        "input_tokens": 25,
+        "output_tokens": 1,
+    }
 
 
 def test_scheduler_node_does_not_count_stop_as_agent_call() -> None:

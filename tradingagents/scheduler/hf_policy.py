@@ -35,7 +35,7 @@ class HFSchedulerPolicy:
     def action_logprobs(
         self, context: SchedulerContext
     ) -> Mapping[SchedulerAction, float]:
-        values = self._distribution(context)
+        values, _ = self._distribution(context)
         return {
             action: float(values[index].item())
             for index, action in enumerate(context.valid_actions)
@@ -44,7 +44,7 @@ class HFSchedulerPolicy:
     def select_action(self, context: SchedulerContext) -> PolicyDecision:
         import torch
 
-        logprobs = self._distribution(context)
+        logprobs, input_tokens = self._distribution(context)
         if self.temperature > 0:
             selected_index = int(torch.multinomial(torch.exp(logprobs), 1).item())
         else:
@@ -53,6 +53,15 @@ class HFSchedulerPolicy:
             context.valid_actions[selected_index],
             policy_id=self.policy_id,
             logprob=float(logprobs[selected_index].item()),
+            metadata={
+                "usage": {
+                    "llm_calls": 1,
+                    "input_tokens": input_tokens,
+                    "output_tokens": 1,
+                    "reported": True,
+                    "source": "local_tokenizer",
+                }
+            },
         )
 
     def _distribution(self, context: SchedulerContext):
@@ -83,7 +92,7 @@ class HFSchedulerPolicy:
         )
         valid_logits = logits[token_ids]
         scale = self.temperature if self.temperature > 0 else 1.0
-        return torch.log_softmax(valid_logits / scale, dim=-1)
+        return torch.log_softmax(valid_logits / scale, dim=-1), len(input_ids)
 
     def _action_token_id(self, action: SchedulerAction) -> int:
         values = self.tokenizer(action.value, add_special_tokens=False)["input_ids"]

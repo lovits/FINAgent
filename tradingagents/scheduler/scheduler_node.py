@@ -118,6 +118,7 @@ class SchedulerNode:
             "scheduler_history": next_history,
             "scheduler_valid_actions": [action.value for action in mask.valid_actions],
             "scheduler_policy_id": decision.policy_id,
+            "scheduler_decision_metadata": dict(decision.metadata),
             "scheduler_no_progress_count": no_progress,
             "scheduler_last_state_signature": current_signature,
             "scheduler_agent_calls": int(state.get("scheduler_agent_calls") or 0)

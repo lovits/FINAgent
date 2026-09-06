@@ -47,6 +47,8 @@ def test_hf_policy_selects_only_from_valid_action_logits() -> None:
     decision = policy.select_action(_context())
     distribution = policy.action_logprobs(_context())
     assert decision.action is SchedulerAction.NEWS
+    assert decision.metadata["usage"]["input_tokens"] > 0
+    assert decision.metadata["usage"]["output_tokens"] == 1
     assert set(distribution) == {SchedulerAction.MARKET, SchedulerAction.NEWS}
     assert sum(torch.exp(torch.tensor(list(distribution.values())))).item() == pytest.approx(1)
 

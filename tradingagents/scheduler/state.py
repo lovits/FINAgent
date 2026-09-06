@@ -12,6 +12,9 @@ class SchedulerAgentState(AgentState):
     scheduler_history: Annotated[list[str], "Ordered scheduler action tokens"]
     scheduler_valid_actions: Annotated[list[str], "Actions valid at the latest decision"]
     scheduler_policy_id: Annotated[str, "Policy that made the latest decision"]
+    scheduler_decision_metadata: Annotated[
+        dict, "Usage and diagnostics for the latest scheduler decision"
+    ]
     scheduler_no_progress_count: Annotated[int, "Consecutive decisions without state progress"]
     scheduler_last_state_signature: Annotated[
         str, "Business-state signature before the latest action"

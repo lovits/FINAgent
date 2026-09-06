@@ -13,14 +13,18 @@ from tradingagents.scheduler.teacher_policy import (
 
 
 class _Response:
-    def __init__(self, content):
+    def __init__(self, content, usage=None):
         self.content = content
+        self.usage = usage
 
     def raise_for_status(self) -> None:
         return None
 
     def json(self) -> dict:
-        return {"choices": [{"message": {"content": self.content}}]}
+        result = {"choices": [{"message": {"content": self.content}}]}
+        if self.usage is not None:
+            result["usage"] = self.usage
+        return result
 
 
 def _context() -> SchedulerContext:
@@ -44,7 +48,10 @@ def test_teacher_returns_one_valid_action_and_structured_schema() -> None:
 
     def transport(*args, **kwargs):
         calls.append((args, kwargs))
-        return _Response(json.dumps({"action": "<ACT_NEWS>"}))
+        return _Response(
+            json.dumps({"action": "<ACT_NEWS>"}),
+            {"prompt_tokens": 80, "completion_tokens": 5},
+        )
 
     gateway = OpenRouterTeacherGateway(
         environ={"OPENROUTER_API_KEY": "test-only"}, transport=transport, seed=7
@@ -53,6 +60,8 @@ def test_teacher_returns_one_valid_action_and_structured_schema() -> None:
 
     assert decision.action is SchedulerAction.NEWS
     assert decision.decision_attempts == 1
+    assert decision.metadata["usage"]["input_tokens"] == 80
+    assert decision.metadata["usage"]["output_tokens"] == 5
     payload = calls[0][1]["json"]
     assert payload["seed"] == 7
     schema = payload["response_format"]["json_schema"]["schema"]

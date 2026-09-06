@@ -31,6 +31,7 @@ import type {
   ResearchDepth,
   RunRequest,
   RunSnapshot,
+  UsageMetrics,
   WebSettings,
 } from "./types";
 
@@ -108,6 +109,42 @@ const INITIAL_FORM: RunRequest = {
   orchestration_mode: "static",
 };
 
+const EMPTY_USAGE: UsageMetrics = {
+  llm_calls: 0,
+  tool_calls: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+};
+
+function totalTokens(metrics: Partial<UsageMetrics> | undefined): number {
+  return (metrics?.input_tokens ?? 0) + (metrics?.output_tokens ?? 0);
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+function formatCompact(value: number): string {
+  return new Intl.NumberFormat("zh-CN", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function nodeUsage(events: NodeEvent[], node: string): UsageMetrics {
+  return events
+    .filter((event) => event.node === node)
+    .reduce(
+      (total, event) => ({
+        llm_calls: total.llm_calls + (event.usage?.llm_calls ?? 0),
+        tool_calls: total.tool_calls + (event.usage?.tool_calls ?? 0),
+        input_tokens: total.input_tokens + (event.usage?.input_tokens ?? 0),
+        output_tokens: total.output_tokens + (event.usage?.output_tokens ?? 0),
+      }),
+      EMPTY_USAGE,
+    );
+}
+
 export default function App() {
   const [form, setForm] = useState<RunRequest>(INITIAL_FORM);
   const [run, setRun] = useState<RunSnapshot | null>(null);
@@ -134,6 +171,16 @@ export default function App() {
     () => REPORT_ORDER.filter((key) => reports[key]),
     [reports],
   );
+  const liveMetrics = useMemo<UsageMetrics>(() => {
+    const latest = nodes.at(-1)?.cumulative_metrics;
+    if (latest) return latest;
+    return {
+      llm_calls: run?.metrics.llm_calls ?? 0,
+      tool_calls: run?.metrics.tool_calls ?? 0,
+      input_tokens: run?.metrics.input_tokens ?? 0,
+      output_tokens: run?.metrics.output_tokens ?? 0,
+    };
+  }, [nodes, run]);
 
   useEffect(() => {
     void getSettings()
@@ -496,6 +543,8 @@ export default function App() {
 
               {formError && <div className="connection-warning" role="status">{formError}</div>}
 
+              <LiveUsageStrip metrics={liveMetrics} running={isBusy} />
+
               <ProcessGraph
                 analysts={run.request.analysts}
                 events={nodes}
@@ -542,7 +591,22 @@ export default function App() {
 
 function TimelineItem({ node, index, onSelect }: { node: NodeEvent; index: number; onSelect: (node: string) => void }) {
   const Icon = node.kind === "tool" ? Wrench : node.kind === "scheduler" ? Bot : Check;
-  return <button className={`timeline-item ${node.kind} ${node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}</span></button>;
+  const tokens = totalTokens(node.usage);
+  return <button className={`timeline-item ${node.kind} ${node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}{tokens > 0 && <span className="timeline-token">+{formatNumber(tokens)} TOK</span>}</span></button>;
+}
+
+function LiveUsageStrip({ metrics, running }: { metrics: UsageMetrics; running: boolean }) {
+  const total = totalTokens(metrics);
+  return <section className="usage-strip" aria-label="实时资源消耗" aria-live="polite">
+    <div className="usage-strip-title"><Activity size={16} aria-hidden="true" /><span>{running ? "实时消耗" : "本次消耗"}</span>{running && <i />}</div>
+    <dl>
+      <div><dt>输入 Token</dt><dd>{formatNumber(metrics.input_tokens)}</dd></div>
+      <div><dt>输出 Token</dt><dd>{formatNumber(metrics.output_tokens)}</dd></div>
+      <div className="usage-total"><dt>总 Token</dt><dd>{formatNumber(total)}</dd></div>
+      <div><dt>模型调用</dt><dd>{formatNumber(metrics.llm_calls)}</dd></div>
+      <div><dt>工具调用</dt><dd>{formatNumber(metrics.tool_calls)}</dd></div>
+    </dl>
+  </section>;
 }
 
 const ACTION_NODE: Record<string, string> = {
@@ -611,6 +675,7 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
   const researchNodes = ["Bull Researcher", "Bear Researcher", "Research Manager"];
   const riskNodes = ["Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"];
   const canOpen = (node: string) => events.some((event) => event.node === node);
+  const schedulerTokens = totalTokens(nodeUsage(events, "Scheduler"));
 
   return <section className="process-graph" aria-label="多Agent分析阶段图">
     <div className="process-heading">
@@ -633,11 +698,17 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
 
         <path className="lane-divider" d="M30 78H970M30 326H970" />
 
-        <g className={`router-node ${events.length ? "completed" : "running"}`}>
+        <g
+          className={`router-node ${events.length ? "completed" : "running"} ${canOpen("Scheduler") ? "clickable" : ""}`}
+          role={canOpen("Scheduler") ? "button" : undefined}
+          tabIndex={canOpen("Scheduler") ? 0 : undefined}
+          onClick={() => { if (canOpen("Scheduler")) onSelectNode("Scheduler"); }}
+          onKeyDown={(event) => { if (canOpen("Scheduler") && (event.key === "Enter" || event.key === " ")) onSelectNode("Scheduler"); }}
+        >
           <rect x="30" y="18" width="300" height="48" rx="13" />
           <circle cx="54" cy="42" r="7" />
           <text x="72" y="47">{mode === "static" ? "Static LangGraph Router" : "Dynamic Scheduler"}</text>
-          <text className="node-state" x="312" y="47" textAnchor="end">{events.length ? "已启动" : "初始化"}</text>
+          <text className="node-state" x="312" y="47" textAnchor="end">{schedulerTokens ? `${formatCompact(schedulerTokens)} tok` : events.length ? "已启动" : "初始化"}</text>
         </g>
 
         <FlowPath d="M180 66V92" active />
@@ -648,24 +719,24 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
         <FlowPath d="M660 458H690" active={finished} />
 
         <StageShell x={30} y={96} width={300} height={198} index="01" label="多源分析" />
-        {analystNodes.map((node) => <SvgAgentNode {...node} state={nodeState(node.name)} onSelect={canOpen(node.name) ? onSelectNode : undefined} key={node.name} />)}
+        {analystNodes.map((node) => <SvgAgentNode {...node} state={nodeState(node.name)} tokens={totalTokens(nodeUsage(events, node.name))} onSelect={canOpen(node.name) ? onSelectNode : undefined} key={node.name} />)}
 
         <StageShell x={360} y={96} width={300} height={198} index="02" label="研究辩论" />
-        <SvgAgentNode x={380} y={142} name="Bull Researcher" state={nodeState("Bull Researcher")} onSelect={canOpen("Bull Researcher") ? onSelectNode : undefined} />
-        <SvgAgentNode x={515} y={142} name="Bear Researcher" state={nodeState("Bear Researcher")} onSelect={canOpen("Bear Researcher") ? onSelectNode : undefined} />
-        <SvgAgentNode x={424} y={214} name="Research Manager" state={nodeState("Research Manager")} onSelect={canOpen("Research Manager") ? onSelectNode : undefined} wide />
+        <SvgAgentNode x={380} y={142} name="Bull Researcher" state={nodeState("Bull Researcher")} tokens={totalTokens(nodeUsage(events, "Bull Researcher"))} onSelect={canOpen("Bull Researcher") ? onSelectNode : undefined} />
+        <SvgAgentNode x={515} y={142} name="Bear Researcher" state={nodeState("Bear Researcher")} tokens={totalTokens(nodeUsage(events, "Bear Researcher"))} onSelect={canOpen("Bear Researcher") ? onSelectNode : undefined} />
+        <SvgAgentNode x={424} y={214} name="Research Manager" state={nodeState("Research Manager")} tokens={totalTokens(nodeUsage(events, "Research Manager"))} onSelect={canOpen("Research Manager") ? onSelectNode : undefined} wide />
 
         <StageShell x={690} y={96} width={280} height={198} index="03" label="交易计划" />
-        <SvgAgentNode x={744} y={170} name="Trader" state={nodeState("Trader")} onSelect={canOpen("Trader") ? onSelectNode : undefined} wide />
+        <SvgAgentNode x={744} y={170} name="Trader" state={nodeState("Trader")} tokens={totalTokens(nodeUsage(events, "Trader"))} onSelect={canOpen("Trader") ? onSelectNode : undefined} wide />
 
         <text className="route-caption" x="30" y="344">进入风险评估与最终决策</text>
         <StageShell x={30} y={356} width={300} height={204} index="04" label="风险评估" />
-        <SvgAgentNode x={50} y={402} name="Aggressive Analyst" state={nodeState("Aggressive Analyst")} onSelect={canOpen("Aggressive Analyst") ? onSelectNode : undefined} />
-        <SvgAgentNode x={185} y={402} name="Conservative Analyst" state={nodeState("Conservative Analyst")} onSelect={canOpen("Conservative Analyst") ? onSelectNode : undefined} />
-        <SvgAgentNode x={94} y={474} name="Neutral Analyst" state={nodeState("Neutral Analyst")} onSelect={canOpen("Neutral Analyst") ? onSelectNode : undefined} wide />
+        <SvgAgentNode x={50} y={402} name="Aggressive Analyst" state={nodeState("Aggressive Analyst")} tokens={totalTokens(nodeUsage(events, "Aggressive Analyst"))} onSelect={canOpen("Aggressive Analyst") ? onSelectNode : undefined} />
+        <SvgAgentNode x={185} y={402} name="Conservative Analyst" state={nodeState("Conservative Analyst")} tokens={totalTokens(nodeUsage(events, "Conservative Analyst"))} onSelect={canOpen("Conservative Analyst") ? onSelectNode : undefined} />
+        <SvgAgentNode x={94} y={474} name="Neutral Analyst" state={nodeState("Neutral Analyst")} tokens={totalTokens(nodeUsage(events, "Neutral Analyst"))} onSelect={canOpen("Neutral Analyst") ? onSelectNode : undefined} wide />
 
         <StageShell x={360} y={356} width={300} height={204} index="05" label="组合决策" />
-        <SvgAgentNode x={424} y={432} name="Portfolio Manager" state={nodeState("Portfolio Manager")} onSelect={canOpen("Portfolio Manager") ? onSelectNode : undefined} wide />
+        <SvgAgentNode x={424} y={432} name="Portfolio Manager" state={nodeState("Portfolio Manager")} tokens={totalTokens(nodeUsage(events, "Portfolio Manager"))} onSelect={canOpen("Portfolio Manager") ? onSelectNode : undefined} wide />
 
         <StageShell x={690} y={356} width={280} height={204} index="06" label="报告交付" />
         <g className={`final-node ${finished ? "completed" : "pending"}`}>
@@ -692,17 +763,19 @@ function StageShell({ x, y, width, height, index, label }: { x: number; y: numbe
   return <g className="stage-shell"><rect x={x} y={y} width={width} height={height} rx="16" /><text className="stage-index" x={x + 18} y={y + 29}>{index}</text><text className="stage-label" x={x + 54} y={y + 29}>{label}</text></g>;
 }
 
-function SvgAgentNode({ x, y, name, state, wide = false, onSelect }: {
+function SvgAgentNode({ x, y, name, state, tokens, wide = false, onSelect }: {
   x: number;
   y: number;
   name: string;
   state: GraphNodeState;
+  tokens: number;
   wide?: boolean;
   onSelect?: (node: string) => void;
 }) {
   const width = wide ? 172 : 128;
   const label = name.replace(" Analyst", "").replace(" Researcher", "").replace(" Manager", " Mgr");
-  const status = { pending: "等待", running: "运行中", completed: "完成", skipped: "未调用" }[state];
+  const stateLabel = { pending: "等待", running: "运行中", completed: "完成", skipped: "未调用" }[state];
+  const status = tokens > 0 ? `${stateLabel} · ${formatCompact(tokens)} tok` : stateLabel;
   return <g className={`svg-agent-node ${state} ${onSelect ? "clickable" : ""}`} filter={state === "running" ? "url(#active-glow)" : undefined} role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} onClick={() => onSelect?.(name)} onKeyDown={(event) => { if (onSelect && (event.key === "Enter" || event.key === " ")) onSelect(name); }}>
     <rect x={x} y={y} width={width} height="56" rx="11" />
     <circle cx={x + 15} cy={y + 18} r="5" />
@@ -726,33 +799,85 @@ const NODE_REPORT: Record<string, string> = {
   "Portfolio Manager": "final_trade_decision",
 };
 
+const AGENT_TOOL_NODE: Record<string, string> = {
+  "Market Analyst": "tools_market",
+  "Sentiment Analyst": "tools_social",
+  "News Analyst": "tools_news",
+  "Fundamentals Analyst": "tools_fundamentals",
+};
+
+function traceNodes(node: string): Set<string> {
+  const pair = Object.entries(AGENT_TOOL_NODE).find(
+    ([agent, tool]) => node === agent || node === tool,
+  );
+  return new Set(pair ?? [node]);
+}
+
+function usageForEvents(items: Array<{ event: NodeEvent }>): UsageMetrics {
+  return items.reduce(
+    (total, item) => ({
+      llm_calls: total.llm_calls + (item.event.usage?.llm_calls ?? 0),
+      tool_calls: total.tool_calls + (item.event.usage?.tool_calls ?? 0),
+      input_tokens: total.input_tokens + (item.event.usage?.input_tokens ?? 0),
+      output_tokens: total.output_tokens + (item.event.usage?.output_tokens ?? 0),
+    }),
+    EMPTY_USAGE,
+  );
+}
+
 function NodeDetailDrawer({ node, events, reports, onClose }: {
   node: string;
   events: NodeEvent[];
   reports: Record<string, string>;
   onClose: () => void;
 }) {
-  const occurrences = events.map((event, index) => ({ event, index })).filter((item) => item.event.node === node);
-  const latest = occurrences.at(-1)?.event;
+  const includedNodes = traceNodes(node);
+  const occurrences = events
+    .map((event, index) => ({ event, index }))
+    .filter((item) => includedNodes.has(item.event.node));
+  const latest = occurrences.filter((item) => item.event.node === node).at(-1)?.event
+    ?? occurrences.at(-1)?.event;
   const reportKey = NODE_REPORT[node];
   const report = reportKey ? reports[reportKey] : "";
-  const tools = occurrences.flatMap((item) => item.event.tool_calls ?? []);
+  const usage = usageForEvents(occurrences);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
   return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <aside className="node-drawer" role="dialog" aria-modal="true" aria-labelledby="node-detail-title">
       <header><div><p className="step-label">NODE TRACE</p><h2 id="node-detail-title">{node}</h2></div><button onClick={onClose} aria-label="关闭节点详情"><X size={18} /></button></header>
-      <div className="drawer-section"><h3>执行记录</h3>{occurrences.map(({ event, index }) => <div className="trace-row" key={index}><span>STEP {String(index + 1).padStart(2, "0")}</span><strong>{event.status === "completed" ? "已完成" : "运行中"}</strong>{event.selected_action && <small>{actionLabel(event.selected_action)}</small>}</div>)}</div>
-      {latest?.valid_actions?.length ? <div className="drawer-section"><h3>Scheduler合法动作</h3><div className="action-chips">{latest.valid_actions.map((action) => <span key={action}>{actionLabel(action)}</span>)}</div></div> : null}
-      {tools.length ? <div className="drawer-section"><h3>工具调用</h3>{tools.map((tool, index) => <div className="tool-detail" key={`${tool.name}-${index}`}><strong>{tool.name}</strong><pre>{JSON.stringify(tool.args, null, 2)}</pre></div>)}</div> : null}
-      {latest?.message ? <div className="drawer-section"><h3>Agent消息</h3><pre className="message-detail">{latest.message}</pre></div> : null}
+      <div className="drawer-usage" aria-label="节点资源消耗"><div><span>输入 Token</span><strong>{formatNumber(usage.input_tokens)}</strong></div><div><span>输出 Token</span><strong>{formatNumber(usage.output_tokens)}</strong></div><div className="drawer-usage-total"><span>总 Token</span><strong>{formatNumber(totalTokens(usage))}</strong></div><div><span>LLM / 工具</span><strong>{usage.llm_calls} / {usage.tool_calls}</strong></div></div>
+      <div className="drawer-section trace-section"><h3>轨迹采集 · {occurrences.length} 条</h3>{occurrences.map(({ event, index }) => {
+        const records = event.messages?.length
+          ? event.messages
+          : event.message
+            ? [{ type: event.kind, content: event.message, content_length: event.message.length, truncated: false }]
+            : [];
+        const eventTokens = totalTokens(event.usage);
+        return <article className={`trace-card ${event.kind}`} key={index}>
+          <header className="trace-card-header"><div><span>STEP {String(index + 1).padStart(2, "0")}</span><strong>{event.node}</strong></div><div><small>{event.timestamp_ms ? new Date(event.timestamp_ms).toLocaleTimeString("zh-CN", { hour12: false }) : ""}</small><b>{event.status === "completed" ? "已完成" : "运行中"}</b></div></header>
+          <div className="trace-metrics"><span>{event.kind.toUpperCase()}</span>{eventTokens > 0 && <span>+{formatNumber(eventTokens)} Token</span>}{Boolean(event.usage?.llm_calls) && eventTokens === 0 && <span>Token 未上报</span>}{Boolean(event.usage?.tool_calls) && <span>{event.usage?.tool_calls} 次工具调用</span>}</div>
+          {event.policy_id && <div className="scheduler-detail"><span>策略</span><code>{event.policy_id}</code>{event.scheduler_step != null && <span>第 {event.scheduler_step} 次决策</span>}</div>}
+          {event.selected_action && <div className="scheduler-choice"><span>选择动作</span><strong>{actionLabel(event.selected_action)}</strong></div>}
+          {event.valid_actions?.length ? <div className="trace-subsection"><h4>合法动作</h4><div className="action-chips">{event.valid_actions.map((action) => <span key={action}>{actionLabel(action)}</span>)}</div></div> : null}
+          {event.scheduler_history?.length ? <div className="trace-subsection"><h4>历史动作</h4><div className="action-chips history">{event.scheduler_history.map((action, actionIndex) => <span key={`${action}-${actionIndex}`}>{actionIndex + 1}. {actionLabel(action)}</span>)}</div></div> : null}
+          {event.produced_fields?.length ? <div className="trace-subsection"><h4>产出字段</h4><div className="field-chips">{event.produced_fields.map((field) => <span key={field}>{field}</span>)}</div></div> : null}
+          {event.tool_calls?.map((tool, toolIndex) => <div className="tool-detail" key={`${tool.id ?? tool.name}-${toolIndex}`}><div><strong>{tool.name}</strong>{tool.id && <code>{tool.id}</code>}</div><h4>调用参数</h4><pre>{JSON.stringify(tool.args, null, 2)}</pre></div>)}
+          {records.map((message, messageIndex) => <div className={`message-record ${event.kind}`} key={`${message.tool_call_id ?? messageIndex}`}><div><strong>{event.kind === "tool" ? "工具返回" : event.kind === "scheduler" ? "调度输出" : "Agent 输出"}</strong>{message.name && <span>{message.name}</span>}{message.tool_call_id && <code>{message.tool_call_id}</code>}</div><pre>{message.content}</pre>{message.truncated && <small>内容共 {formatNumber(message.content_length)} 字符，此处展示前 20,000 字符。</small>}</div>)}
+        </article>;
+      })}</div>
       {report ? <div className="drawer-section"><h3>阶段报告</h3><div className="drawer-markdown"><ReactMarkdown>{report}</ReactMarkdown></div></div> : null}
-      {!latest?.message && !tools.length && !report && <p className="drawer-empty">当前节点尚未产生可展示内容。</p>}
+      {!latest && !report && <p className="drawer-empty">当前节点尚未产生可展示内容。</p>}
     </aside>
   </div>;
 }
 
 function CompletionSummary({ run, onReset, onExport }: { run: RunSnapshot; onReset: () => void; onExport: () => Promise<void> }) {
-  const totalTokens = (run.metrics.input_tokens ?? 0) + (run.metrics.output_tokens ?? 0);
-  return <section className="completion-summary"><div><p className="step-label">03 / COMPLETE</p><h3>分析报告已完成</h3></div><dl><div><dt>最终信号</dt><dd>{run.signal ?? "已生成"}</dd></div><div><dt>LLM调用</dt><dd>{run.metrics.llm_calls ?? 0}</dd></div><div><dt>工具调用</dt><dd>{run.metrics.tool_calls ?? 0}</dd></div><div><dt>Token</dt><dd>{totalTokens.toLocaleString()}</dd></div></dl><div className="completion-actions"><button className="secondary-button" onClick={() => void onExport()}><Download size={15} />导出报告</button><button className="secondary-button" onClick={onReset}>新建任务</button></div></section>;
+  return <section className="completion-summary"><div><p className="step-label">03 / COMPLETE</p><h3>分析报告已完成</h3></div><dl><div><dt>最终信号</dt><dd>{run.signal ?? "已生成"}</dd></div><div><dt>LLM调用</dt><dd>{run.metrics.llm_calls ?? 0}</dd></div><div><dt>工具调用</dt><dd>{run.metrics.tool_calls ?? 0}</dd></div><div><dt>Token</dt><dd>{formatNumber(totalTokens(run.metrics))}</dd></div></dl><div className="completion-actions"><button className="secondary-button" onClick={() => void onExport()}><Download size={15} />导出报告</button><button className="secondary-button" onClick={onReset}>新建任务</button></div></section>;
 }
 
 function statusLabel(status?: RunSnapshot["status"]) {

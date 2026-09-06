@@ -585,6 +585,7 @@ class TradingAgentsGraph:
                     "scheduler_history": [],
                     "scheduler_valid_actions": [],
                     "scheduler_policy_id": self.scheduler_policy.policy_id,
+                    "scheduler_decision_metadata": {},
                     "scheduler_no_progress_count": 0,
                     "scheduler_last_state_signature": "",
                     "scheduler_agent_calls": 0,

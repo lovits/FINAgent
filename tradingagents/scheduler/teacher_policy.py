@@ -64,6 +64,7 @@ class OpenRouterTeacherGateway:
         self._transport = transport or requests.post
         self._sleeper = sleeper
         self._environ = os.environ if environ is None else environ
+        self.last_usage: dict[str, object] = self._empty_usage()
 
     def _api_key(self) -> str:
         value = self._environ.get(self.api_key_env, "").strip()
@@ -98,6 +99,7 @@ class OpenRouterTeacherGateway:
         if self.seed is not None:
             payload["seed"] = self.seed
         body = self._request_body(payload)
+        self.last_usage = self._usage_from_body(body)
 
         try:
             raw_output = body["choices"][0]["message"]["content"]
@@ -114,6 +116,36 @@ class OpenRouterTeacherGateway:
         if action not in valid_actions:
             raise TeacherOutputError("action_not_in_valid_actions", raw_output)
         return action, raw_output
+
+    @staticmethod
+    def _empty_usage() -> dict[str, object]:
+        return {
+            "llm_calls": 1,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "reported": False,
+            "source": "openrouter",
+        }
+
+    @classmethod
+    def _usage_from_body(cls, body: object) -> dict[str, object]:
+        if not isinstance(body, Mapping):
+            return cls._empty_usage()
+        usage = body.get("usage")
+        if not isinstance(usage, Mapping):
+            return cls._empty_usage()
+        try:
+            input_tokens = max(0, int(usage.get("prompt_tokens") or 0))
+            output_tokens = max(0, int(usage.get("completion_tokens") or 0))
+        except (TypeError, ValueError):
+            return cls._empty_usage()
+        return {
+            "llm_calls": 1,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "reported": bool(input_tokens or output_tokens),
+            "source": "openrouter",
+        }
 
     def _request_body(self, payload: Mapping[str, object]) -> object:
         for attempt in range(self.transport_attempts):
@@ -179,10 +211,13 @@ class TeacherSchedulerPolicy:
             positive_examples=self.positive_examples,
             failure_examples=self.failure_examples,
         )
+        usage = self._zero_usage()
         try:
             action, _ = self.gateway.request(messages, context.valid_actions)
-            return self._decision(action, attempts=1, corrected=False)
+            usage = self._add_usage(usage, self.gateway.last_usage)
+            return self._decision(action, attempts=1, corrected=False, usage=usage)
         except TeacherOutputError as first_error:
+            usage = self._add_usage(usage, self.gateway.last_usage)
             correction = build_teacher_correction(
                 error_type=first_error.reason,
                 previous_output=first_error.raw_output,
@@ -196,18 +231,49 @@ class TeacherSchedulerPolicy:
             )
             try:
                 action, _ = self.gateway.request(messages, context.valid_actions)
+                usage = self._add_usage(usage, self.gateway.last_usage)
             except TeacherOutputError as second_error:
                 raise TeacherGatewayError(
                     f"Teacher correction failed: {second_error.reason}"
                 ) from second_error
-            return self._decision(action, attempts=2, corrected=True)
+            return self._decision(action, attempts=2, corrected=True, usage=usage)
+
+    @staticmethod
+    def _zero_usage() -> dict[str, object]:
+        return {
+            "llm_calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "reported": False,
+            "source": "openrouter",
+        }
+
+    @staticmethod
+    def _add_usage(
+        total: Mapping[str, object], current: Mapping[str, object]
+    ) -> dict[str, object]:
+        return {
+            "llm_calls": int(total.get("llm_calls") or 0)
+            + int(current.get("llm_calls") or 0),
+            "input_tokens": int(total.get("input_tokens") or 0)
+            + int(current.get("input_tokens") or 0),
+            "output_tokens": int(total.get("output_tokens") or 0)
+            + int(current.get("output_tokens") or 0),
+            "reported": bool(total.get("reported") or current.get("reported")),
+            "source": "openrouter",
+        }
 
     @staticmethod
     def _content(value: object) -> str:
         return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
     def _decision(
-        self, action: SchedulerAction, *, attempts: int, corrected: bool
+        self,
+        action: SchedulerAction,
+        *,
+        attempts: int,
+        corrected: bool,
+        usage: Mapping[str, object],
     ) -> PolicyDecision:
         return PolicyDecision(
             action,
@@ -217,5 +283,6 @@ class TeacherSchedulerPolicy:
             metadata={
                 "teacher_model": self.gateway.model,
                 "teacher_prompt_version": TEACHER_PROMPT_VERSION,
+                "usage": dict(usage),
             },
         )
