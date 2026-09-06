@@ -61,6 +61,7 @@ h2 { font-size: 23px; letter-spacing: -.025em; }
 .field input, .field select { width: 100%; height: 46px; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; }
 .field input:hover, .field select:hover { border-color: #475569; }
 .field small { color: #fcd34d; line-height: 1.4; }
+.field .source-hint { color: #86efac; }
 fieldset { border: 0; padding: 0; margin: 22px 0 0; min-width: 0; }
 legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 

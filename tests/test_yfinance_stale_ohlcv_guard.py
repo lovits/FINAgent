@@ -69,14 +69,8 @@ class StaleGuardPropagationTests(unittest.TestCase):
             index=pd.DatetimeIndex([pd.Timestamp("2025-06-11")], name="Date"),
         )
 
-        class DummyTicker:
-            def __init__(self, symbol):
-                pass
-
-            def history(self, start, end):
-                return stale
-
-        with mock.patch.object(y_finance.yf, "Ticker", DummyTicker), \
+        stale = stale.reset_index()
+        with mock.patch.object(y_finance, "load_ohlcv", return_value=stale), \
                 self.assertRaises(NoMarketDataError):
             y_finance.get_YFin_data_online("CB", "2026-06-01", "2026-06-11")
 

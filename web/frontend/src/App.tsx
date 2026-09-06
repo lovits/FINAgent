@@ -101,13 +101,20 @@ function today(): string {
 }
 
 const INITIAL_FORM: RunRequest = {
-  ticker: "NVDA",
+  ticker: "600519",
   analysis_date: today(),
   output_language: "Chinese",
   analysts: ["market", "social", "news", "fundamentals"],
   research_depth: "shallow",
   orchestration_mode: "static",
 };
+
+function isAShareInput(value: string): boolean {
+  return value
+    .split(/[,，\s]+/)
+    .filter(Boolean)
+    .every((ticker) => /^\d{6}(\.(SS|SH|SZ))?$/i.test(ticker));
+}
 
 const EMPTY_USAGE: UsageMetrics = {
   llm_calls: 0,
@@ -398,10 +405,11 @@ export default function App() {
                 <input
                   value={form.ticker}
                   onChange={(event) => setForm({ ...form, ticker: event.target.value.toUpperCase() })}
-                  placeholder="例如 NVDA, 600519, 000001.SZ"
+                  placeholder="例如 600519, 000001, 300750"
                   disabled={isBusy}
                   required
                 />
+                <small className="source-hint">默认A股路线：BaoStock行情与财务 · AKShare/东方财富新闻</small>
               </label>
               <label className="field">
                 <span>分析日期</span>
@@ -533,6 +541,7 @@ export default function App() {
                 <div className="run-meta">
                   {batchTotal > 1 && <span>{Math.min(completedRuns.length + 1, batchTotal)} / {batchTotal}</span>}
                   <span>{modeTitle(run.request.orchestration_mode)}</span><span>{run.request.analysis_date}</span>
+                  {isAShareInput(run.request.ticker) && <span>数据：BaoStock + AKShare</span>}
                   <span>专家：{run.models.expert ?? expertModel}</span><span>调度：{run.models.scheduler ?? "初始化中"}</span>
                 </div>
               </div>

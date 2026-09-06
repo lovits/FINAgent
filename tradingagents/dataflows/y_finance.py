@@ -22,6 +22,7 @@ def get_YFin_data_online(
 ):
 
     datetime.strptime(start_date, "%Y-%m-%d")
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
     from .ohlcv_snapshot import read_ohlcv_snapshot
@@ -31,15 +32,13 @@ def get_YFin_data_online(
                 "# Source: previously retrieved Yahoo Finance adjusted-price cache\n\n"
                 + snapshot.to_csv(index=False))
 
-    # Resolve broker/forex symbols to Yahoo's convention (XAUUSD+ -> GC=F).
+    # Use the same cached OHLCV loader as technical indicators. The previous
+    # direct ``Ticker.history`` path bypassed a valid per-symbol cache and could
+    # fail a report on Yahoo 429 even when the requested rows were already on disk.
     canonical = normalize_symbol(symbol)
-    ticker = yf.Ticker(canonical)
-
-    # yfinance treats ``end`` as EXCLUSIVE, so it would drop the requested
-    # end_date row (and the current day when end_date is today). Request one day
-    # past end_date so the requested range is actually inclusive (#986/#987).
-    end_inclusive = (end_dt + relativedelta(days=1)).strftime("%Y-%m-%d")
-    data = yf_retry(lambda: ticker.history(start=start_date, end=end_inclusive))
+    data = load_ohlcv(symbol, end_date)
+    dates = pd.to_datetime(data["Date"], errors="coerce")
+    data = data[(dates >= start_dt) & (dates <= end_dt)].copy()
 
     # Empty result means the symbol is unknown/delisted. Raise a typed error
     # instead of returning prose: the routing layer turns it into a single
@@ -48,10 +47,6 @@ def get_YFin_data_online(
         raise NoMarketDataError(
             symbol, canonical, f"no rows between {start_date} and {end_date}"
         )
-
-    # Remove timezone info from index for cleaner output
-    if data.index.tz is not None:
-        data.index = data.index.tz_localize(None)
 
     # Reject a stale frame (e.g. a year-old partial response) before it is
     # formatted into the report. Raises NoMarketDataError, which the router
@@ -65,13 +60,14 @@ def get_YFin_data_online(
             data[col] = data[col].round(2)
 
     # Convert DataFrame to CSV string
-    csv_string = data.to_csv()
+    csv_string = data.to_csv(index=False)
 
     # Add header information; note the resolved symbol when it differs so the
     # agent (and user) can see which instrument was actually priced.
     label = canonical if canonical == symbol.upper() else f"{canonical} (from {symbol})"
     header = f"# Stock data for {label} from {start_date} to {end_date}\n"
     header += f"# Total records: {len(data)}\n"
+    header += "# Source: Yahoo Finance with shared local OHLCV cache\n"
     header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
     return header + csv_string

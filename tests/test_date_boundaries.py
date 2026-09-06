@@ -13,29 +13,29 @@ from tradingagents.dataflows.config import set_config
 
 
 @pytest.mark.unit
-def test_get_yfin_requests_inclusive_end(monkeypatch):
+def test_get_yfin_uses_shared_loader_and_keeps_inclusive_end(monkeypatch):
     captured = {}
 
-    class FakeTicker:
-        def __init__(self, symbol):
-            pass
+    def fake_load(symbol, curr_date):
+        captured["symbol"] = symbol
+        captured["curr_date"] = curr_date
+        return pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2025-04-30", "2025-05-08", "2025-05-09"]),
+                "Open": [0.0, 1.0, 2.0],
+                "High": [0.0, 1.0, 2.0],
+                "Low": [0.0, 1.0, 2.0],
+                "Close": [0.0, 1.0, 2.0],
+                "Volume": [0, 1, 2],
+            }
+        )
 
-        def history(self, start, end):
-            captured["start"] = start
-            captured["end"] = end
-            idx = pd.to_datetime(["2025-05-08", "2025-05-09"])
-            return pd.DataFrame(
-                {"Open": [1.0, 2.0], "High": [1.0, 2.0], "Low": [1.0, 2.0],
-                 "Close": [1.0, 2.0], "Volume": [1, 2]},
-                index=idx,
-            )
-
-    monkeypatch.setattr(yfin.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(yfin, "load_ohlcv", fake_load)
     out = yfin.get_YFin_data_online("AAPL", "2025-05-01", "2025-05-09")
 
-    # end is requested one day past end_date so 2025-05-09 is included (#987).
-    assert captured["end"] == "2025-05-10"
-    # Header still reflects the requested range, not the internal +1 day.
+    assert captured == {"symbol": "AAPL", "curr_date": "2025-05-09"}
+    assert "2025-04-30" not in out
+    assert "2025-05-09" in out
     assert "to 2025-05-09" in out
 
 
