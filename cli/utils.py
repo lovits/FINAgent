@@ -146,6 +146,10 @@ def select_orchestration_mode() -> str:
                 "Teacher Dynamic Scheduler - OpenRouter model selects the next Agent",
                 value="teacher",
             ),
+            questionary.Choice(
+                "Local Learned Scheduler - trained local model selects the next Agent",
+                value="learned",
+            ),
         ],
         instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
         style=questionary.Style(
@@ -160,6 +164,15 @@ def select_orchestration_mode() -> str:
         console.print("\n[red]No orchestration mode selected. Exiting...[/red]")
         exit(1)
     return choice
+
+
+def get_scheduler_adapter_path() -> str:
+    """Prompt for the LoRA adapter used by the local learned scheduler."""
+
+    return _require_text(
+        "Enter local scheduler LoRA adapter directory:",
+        "Please enter the trained scheduler adapter directory.",
+    )
 
 
 def select_analysts(asset_type: AssetType = AssetType.STOCK) -> list[AnalystType]:

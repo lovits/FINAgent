@@ -433,7 +433,13 @@ class TradingAgentsGraph:
             signature_parts.append(f"orchestration={mode}")
         return "|".join(signature_parts)
 
-    def propagate(self, company_name, trade_date, asset_type: str = "stock"):
+    def propagate(
+        self,
+        company_name,
+        trade_date,
+        asset_type: str = "stock",
+        on_graph_event: Callable[[str, object], None] | None = None,
+    ):
         """Run the trading agents graph for a company on a specific date.
 
         ``asset_type`` selects between the stock pipeline (default) and the
@@ -469,9 +475,19 @@ class TradingAgentsGraph:
 
         try:
             if self.orchestration_mode == "static":
-                return self._run_graph(company_name, trade_date, asset_type=asset_type)
+                return self._run_graph(
+                    company_name,
+                    trade_date,
+                    asset_type=asset_type,
+                    on_graph_event=on_graph_event,
+                )
             try:
-                return self._run_graph(company_name, trade_date, asset_type=asset_type)
+                return self._run_graph(
+                    company_name,
+                    trade_date,
+                    asset_type=asset_type,
+                    on_graph_event=on_graph_event,
+                )
             except SchedulerRuntimeError as exc:
                 if (
                     self.orchestration_mode == "static"
@@ -479,7 +495,12 @@ class TradingAgentsGraph:
                 ):
                     raise
                 self._activate_static_fallback(exc.reason)
-                return self._run_graph(company_name, trade_date, asset_type=asset_type)
+                return self._run_graph(
+                    company_name,
+                    trade_date,
+                    asset_type=asset_type,
+                    on_graph_event=on_graph_event,
+                )
         finally:
             if self._checkpointer_ctx is not None:
                 self._checkpointer_ctx.__exit__(None, None, None)
@@ -554,7 +575,13 @@ class TradingAgentsGraph:
             )
         return state
 
-    def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
+    def _run_graph(
+        self,
+        company_name,
+        trade_date,
+        asset_type: str = "stock",
+        on_graph_event: Callable[[str, object], None] | None = None,
+    ):
         """Execute the graph and write the resulting state to disk and memory log."""
         if self.orchestration_mode == "static":
             # Preserve the original Static initialization path byte-for-byte in
@@ -581,7 +608,9 @@ class TradingAgentsGraph:
                 str(trade_date),
                 asset_type=asset_type,
             )
-        args = self.propagator.get_graph_args()
+        args = self.propagator.get_graph_args(
+            callbacks=self.callbacks if on_graph_event else None
+        )
 
         # Inject thread_id so same ticker+date+graph-shape resumes; a different
         # date or graph shape starts fresh (#1089).
@@ -589,7 +618,16 @@ class TradingAgentsGraph:
             tid = thread_id(company_name, str(trade_date), self._run_signature(asset_type))
             args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
 
-        if self.debug:
+        if on_graph_event:
+            args["stream_mode"] = ["updates", "values"]
+            final_state = None
+            for stream_mode, payload in self.graph.stream(init_agent_state, **args):
+                on_graph_event(stream_mode, payload)
+                if stream_mode == "values":
+                    final_state = dict(payload)
+            if final_state is None:
+                raise RuntimeError("graph stream completed without a final state")
+        elif self.debug:
             trace = []
             last_printed = None
             for chunk in self.graph.stream(init_agent_state, **args):

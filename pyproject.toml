@@ -51,9 +51,14 @@ scheduler-train = [
     "accelerate>=1.2",
     "datasets>=3.2",
 ]
+web = [
+    "fastapi>=0.116",
+    "uvicorn[standard]>=0.35",
+]
 
 [project.scripts]
 tradingagents = "cli.main:app"
+tradingagents-web = "tradingagents.web.app:main"
 
 [tool.setuptools.packages.find]
 include = ["tradingagents*", "cli*"]

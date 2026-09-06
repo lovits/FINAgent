@@ -76,9 +76,34 @@ def test_scheduler_cli_options_override_defaults():
         checkpoint=None,
         orchestration_mode="learned",
         scheduler_adapter_path="/models/scheduler-adapter",
+        scheduler_base_model="/models/Qwen3-1.7B",
     )
     assert cfg["orchestration_mode"] == "learned"
     assert cfg["scheduler_adapter_path"] == "/models/scheduler-adapter"
+    assert cfg["scheduler_base_model"] == "/models/Qwen3-1.7B"
+
+
+def test_learned_mode_accepts_interactively_selected_adapter():
+    cfg = m._build_run_config(
+        {
+            **SELECTIONS,
+            "orchestration_mode": "learned",
+            "scheduler_adapter_path": "/models/interactive-adapter",
+        },
+        checkpoint=None,
+    )
+    assert cfg["scheduler_adapter_path"] == "/models/interactive-adapter"
+
+
+def test_learned_mode_rejects_missing_adapter():
+    patched = dict(m.DEFAULT_CONFIG, scheduler_adapter_path=None)
+    with mock.patch.object(m, "DEFAULT_CONFIG", patched), pytest.raises(
+        ValueError, match="scheduler_adapter_path"
+    ):
+        m._build_run_config(
+            {**SELECTIONS, "orchestration_mode": "learned"},
+            checkpoint=None,
+        )
 
 
 def test_interactive_orchestration_selection_reaches_config():

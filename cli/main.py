@@ -32,6 +32,7 @@ from cli.utils import (
     confirm_ollama_endpoint,
     detect_asset_type,
     ensure_api_key,
+    get_scheduler_adapter_path,
     get_ticker,
     prompt_openai_compatible_url,
     resolve_backend_url,
@@ -493,7 +494,10 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
-def get_user_selections(orchestration_mode: str | None = None):
+def get_user_selections(
+    orchestration_mode: str | None = None,
+    scheduler_adapter_path: str | None = None,
+):
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
     with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
@@ -567,11 +571,23 @@ def get_user_selections(orchestration_mode: str | None = None):
         console.print(
             create_question_box(
                 "Step 1: Orchestration Mode",
-                "Choose original Static LangGraph or Teacher dynamic Agent routing",
+                "Choose Static LangGraph, Teacher, or a local learned Agent scheduler",
                 "Static LangGraph",
             )
         )
         selected_orchestration_mode = select_orchestration_mode()
+
+    selected_scheduler_adapter_path = scheduler_adapter_path or DEFAULT_CONFIG.get(
+        "scheduler_adapter_path"
+    )
+    if selected_orchestration_mode == "learned" and not selected_scheduler_adapter_path:
+        console.print(
+            create_question_box(
+                "Local Scheduler Model",
+                "Enter the trained LoRA adapter directory for the local scheduler",
+            )
+        )
+        selected_scheduler_adapter_path = get_scheduler_adapter_path()
 
     # Step 2: Ticker symbol
     console.print(
@@ -754,6 +770,7 @@ def get_user_selections(orchestration_mode: str | None = None):
 
     return {
         "orchestration_mode": selected_orchestration_mode,
+        "scheduler_adapter_path": selected_scheduler_adapter_path,
         "ticker": selected_ticker,
         "asset_type": asset_type.value,
         "analysis_date": analysis_date,
@@ -1005,6 +1022,7 @@ def _build_run_config(
     checkpoint: bool | None,
     orchestration_mode: str | None = None,
     scheduler_adapter_path: str | None = None,
+    scheduler_base_model: str | None = None,
 ) -> dict:
     """Assemble the run config from interactive selections, honoring env precedence.
 
@@ -1038,8 +1056,17 @@ def _build_run_config(
     if selected_orchestration_mode not in {"static", "teacher", "learned"}:
         raise ValueError("orchestration_mode must be static, teacher, or learned")
     config["orchestration_mode"] = selected_orchestration_mode
-    if scheduler_adapter_path is not None:
-        config["scheduler_adapter_path"] = scheduler_adapter_path
+    selected_adapter_path = scheduler_adapter_path or selections.get(
+        "scheduler_adapter_path"
+    )
+    if selected_adapter_path is not None:
+        config["scheduler_adapter_path"] = selected_adapter_path
+    if selected_orchestration_mode == "learned" and not config.get(
+        "scheduler_adapter_path"
+    ):
+        raise ValueError("learned mode requires scheduler_adapter_path")
+    if scheduler_base_model is not None:
+        config["scheduler_base_model"] = scheduler_base_model
     return config
 
 
@@ -1047,15 +1074,20 @@ def run_analysis(
     checkpoint: bool | None = None,
     orchestration_mode: str | None = None,
     scheduler_adapter_path: str | None = None,
+    scheduler_base_model: str | None = None,
 ):
     # First get all user selections
-    selections = get_user_selections(orchestration_mode=orchestration_mode)
+    selections = get_user_selections(
+        orchestration_mode=orchestration_mode,
+        scheduler_adapter_path=scheduler_adapter_path,
+    )
 
     config = _build_run_config(
         selections,
         checkpoint,
         orchestration_mode,
         scheduler_adapter_path,
+        scheduler_base_model,
     )
 
     # Create stats callback handler for tracking LLM/tool calls
@@ -1362,6 +1394,11 @@ def analyze(
         "--scheduler-adapter-path",
         help="LoRA adapter directory required by learned mode.",
     ),
+    scheduler_base_model: str | None = typer.Option(
+        None,
+        "--scheduler-base-model",
+        help="Base-model directory or Hugging Face model ID used by learned mode.",
+    ),
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
@@ -1372,6 +1409,7 @@ def analyze(
             checkpoint=checkpoint,
             orchestration_mode=orchestration_mode,
             scheduler_adapter_path=scheduler_adapter_path,
+            scheduler_base_model=scheduler_base_model,
         )
     except _NO_CONSOLE_ERRORS:
         # A terminal with no console buffer cannot host the interactive prompts.
