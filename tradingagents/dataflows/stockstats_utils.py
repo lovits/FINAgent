@@ -10,7 +10,7 @@ from stockstats import wrap
 from yfinance.exceptions import YFRateLimitError
 
 from .config import get_config
-from .symbol_utils import NoMarketDataError, normalize_symbol
+from .symbol_utils import NoMarketDataError, is_a_share_symbol, normalize_symbol
 from .utils import safe_ticker_component
 
 logger = logging.getLogger(__name__)
@@ -180,6 +180,13 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     snapshot = read_ohlcv_snapshot(symbol, curr_date)
     if snapshot is not None:
         return snapshot
+    if is_a_share_symbol(symbol):
+        from .baostock import load_ohlcv as load_baostock_ohlcv
+
+        data = load_baostock_ohlcv(symbol, curr_date)
+        canonical = normalize_symbol(symbol)
+        _assert_ohlcv_not_stale(data, curr_date, symbol, canonical)
+        return _clean_dataframe(data)
 
     # Resolve broker/forex symbols (XAUUSD+ -> GC=F) to Yahoo's convention,
     # then reject values that would escape the cache directory when

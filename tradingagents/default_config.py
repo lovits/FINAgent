@@ -164,6 +164,14 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         "prediction_markets": "polymarket",  # Options: polymarket (keyless)
     },
+    # A-share runs automatically use mainland-China sources. This profile is
+    # applied only to .SS/.SZ symbols; all other markets keep data_vendors.
+    "a_share_data_vendors": {
+        "core_stock_apis": "baostock",
+        "technical_indicators": "baostock",
+        "fundamental_data": "baostock",
+        "news_data": "akshare",
+    },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
         # Example: "get_stock_data": "alpha_vantage",  # Override category default

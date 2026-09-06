@@ -68,7 +68,7 @@ const MODES: Array<{
 
 const ANALYSTS: Array<{ value: Analyst; label: string; detail: string }> = [
   { value: "market", label: "市场分析", detail: "行情与技术指标" },
-  { value: "social", label: "情绪分析", detail: "新闻、StockTwits与Reddit" },
+  { value: "social", label: "情绪分析", detail: "新闻与市场情绪信号" },
   { value: "news", label: "新闻分析", detail: "公司、宏观与事件信息" },
   { value: "fundamentals", label: "基本面分析", detail: "财务报表与公司信息" },
 ];
@@ -351,7 +351,7 @@ export default function App() {
                 <input
                   value={form.ticker}
                   onChange={(event) => setForm({ ...form, ticker: event.target.value.toUpperCase() })}
-                  placeholder="例如 NVDA, AAPL, MSFT"
+                  placeholder="例如 NVDA, 600519, 000001.SZ"
                   disabled={isBusy}
                   required
                 />

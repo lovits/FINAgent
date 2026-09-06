@@ -30,6 +30,7 @@ from tradingagents.agents.utils.agent_utils import (
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.config import set_config
+from tradingagents.dataflows.symbol_utils import is_a_share_symbol
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
@@ -49,6 +50,13 @@ from .setup import GraphSetup
 from .signal_processing import SignalProcessor
 
 logger = logging.getLogger(__name__)
+
+A_SHARE_DATA_VENDORS = {
+    "core_stock_apis": "baostock",
+    "technical_indicators": "baostock",
+    "fundamental_data": "baostock",
+    "news_data": "akshare",
+}
 
 
 def _coerce_max_retries(value):
@@ -95,6 +103,10 @@ class TradingAgentsGraph:
         """
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
+        self._configured_data_vendors = dict(self.config.get("data_vendors", {}))
+        self._a_share_data_vendors = dict(
+            self.config.get("a_share_data_vendors", A_SHARE_DATA_VENDORS)
+        )
         self.callbacks = callbacks or []
         self.requested_orchestration_mode = str(
             self.config.get("orchestration_mode", "static")
@@ -325,7 +337,7 @@ class TradingAgentsGraph:
         actual_holding_days)`` or ``(None, None, None)`` if price data is
         unavailable (too recent, delisted, or network error).
         """
-        from tradingagents.dataflows.symbol_utils import normalize_symbol
+        from tradingagents.dataflows.symbol_utils import is_a_share_symbol, normalize_symbol
 
         try:
             start = datetime.strptime(trade_date, "%Y-%m-%d")
@@ -335,8 +347,16 @@ class TradingAgentsGraph:
             # Normalize so the realized-return lookup hits the same instrument
             # the analysis priced (e.g. XAUUSD -> GC=F) (#984). The benchmark is
             # already a canonical Yahoo symbol from ``_resolve_benchmark``.
-            stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
-            bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
+            if is_a_share_symbol(ticker):
+                from tradingagents.dataflows.baostock import _history
+
+                stock = _history(ticker, trade_date, end_str)
+                bench = _history(benchmark, trade_date, end_str)
+            else:
+                stock = yf.Ticker(normalize_symbol(ticker)).history(
+                    start=trade_date, end=end_str
+                )
+                bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
 
             if len(stock) < 2 or len(bench) < 2:
                 return None, None, None
@@ -402,12 +422,16 @@ class TradingAgentsGraph:
     def resolve_instrument_context(self, ticker: str, asset_type: str = "stock") -> str:
         """Resolve ticker identity once and return the full instrument context.
 
-        Deterministic yfinance lookup (cached, fail-open) injected into a
+        Deterministic vendor lookup (cached, fail-open) injected into a
         context string so every agent anchors to the real company instead of
         hallucinating one from the price chart (#814). Both the propagate()
         path and the CLI call this so the resolved identity reaches the whole
         graph regardless of entry point.
         """
+        vendors = dict(self._configured_data_vendors)
+        if is_a_share_symbol(ticker):
+            vendors.update(self._a_share_data_vendors)
+        set_config({"data_vendors": vendors})
         identity = resolve_instrument_identity(ticker)
         return build_instrument_context(ticker, asset_type, identity)
 

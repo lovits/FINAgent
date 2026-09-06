@@ -72,6 +72,9 @@ _ALIASES = {
 # Yahoo symbols may contain letters, digits, and these structural characters.
 _YAHOO_SAFE = re.compile(r"^[A-Za-z0-9._\-\^=]+$")
 
+_SHANGHAI_PREFIXES = ("600", "601", "603", "605", "688", "689")
+_SHENZHEN_PREFIXES = ("000", "001", "002", "003", "300", "301")
+
 
 # Crypto quote currencies that all map to Yahoo's USD pair. Yahoo lists only
 # ``<BASE>-USD`` (not the USDT/USDC stablecoin pairs), so a broker symbol quoted
@@ -101,15 +104,38 @@ def _normalize_crypto(s: str) -> str | None:
     return f"{base}-USD" if base else None
 
 
+def _normalize_a_share(s: str) -> str | None:
+    if s.endswith(".SH"):
+        return f"{s[:-3]}.SS"
+    if s.endswith((".SS", ".SZ")):
+        return s
+    if not re.fullmatch(r"\d{6}", s):
+        return None
+    if s.startswith(_SHANGHAI_PREFIXES):
+        return f"{s}.SS"
+    if s.startswith(_SHENZHEN_PREFIXES):
+        return f"{s}.SZ"
+    return None
+
+
+def is_a_share_symbol(raw: str) -> bool:
+    """Whether a symbol is a supported Shanghai or Shenzhen A-share code."""
+
+    if not isinstance(raw, str):
+        return False
+    return _normalize_a_share(raw.strip().upper()) is not None
+
+
 def normalize_symbol(raw: str) -> str:
-    """Map a user/broker symbol to its canonical Yahoo Finance symbol.
+    """Map a user/broker symbol to its canonical market symbol.
 
     Resolution order (first match wins):
-      1. Explicit alias table (metals, energy, index CFDs).
-      2. Crypto rule: a known crypto base quoted in USD/USDT/USDC (dashed or
+      1. Shanghai/Shenzhen A-share rule: six-digit codes gain .SS/.SZ.
+      2. Explicit alias table (metals, energy, index CFDs).
+      3. Crypto rule: a known crypto base quoted in USD/USDT/USDC (dashed or
          not) -> ``BASE-USD``.
-      3. Forex rule: six letters that are two ISO currency codes -> ``PAIR=X``.
-      4. Otherwise the upper-cased symbol is returned unchanged (plain
+      4. Forex rule: six letters that are two ISO currency codes -> ``PAIR=X``.
+      5. Otherwise the upper-cased symbol is returned unchanged (plain
          equities, ETFs, Yahoo-native symbols like ``GC=F`` or ``^GSPC``).
 
     A trailing ``+`` (broker CFD marker, e.g. ``XAUUSD+``) is stripped before
@@ -124,7 +150,10 @@ def normalize_symbol(raw: str) -> str:
     s = s.rstrip("+")
 
     crypto = _normalize_crypto(s)
-    if s in _ALIASES:
+    a_share = _normalize_a_share(s)
+    if a_share is not None:
+        canonical = a_share
+    elif s in _ALIASES:
         canonical = _ALIASES[s]
     elif crypto is not None:
         canonical = crypto

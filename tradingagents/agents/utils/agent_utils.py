@@ -93,7 +93,16 @@ def resolve_instrument_identity(ticker: str) -> dict:
     The symbol is normalized first (e.g. ``XAUUSD`` -> ``GC=F``) so identity
     resolves for the same instrument the price path actually fetches (#983).
     """
-    from tradingagents.dataflows.symbol_utils import normalize_symbol
+    from tradingagents.dataflows.symbol_utils import is_a_share_symbol, normalize_symbol
+
+    if is_a_share_symbol(ticker):
+        try:
+            from tradingagents.dataflows.baostock import get_identity
+
+            return get_identity(ticker)
+        except Exception as exc:  # noqa: BLE001 — identity remains best-effort
+            logger.debug("Could not resolve A-share identity for %s: %s", ticker, exc)
+            return {}
 
     try:
         info = yf.Ticker(normalize_symbol(ticker)).info or {}
@@ -212,6 +221,5 @@ def create_msg_delete():
         return {"messages": removal_operations + [placeholder]}
 
     return delete_messages
-
 
 
