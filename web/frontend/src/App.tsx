@@ -1,10 +1,13 @@
 import {
   Activity,
+  ArrowLeft,
   BarChart3,
   Bot,
   Check,
+  ChevronRight,
   CircleDot,
   FileText,
+  GitBranch,
   Play,
   RefreshCw,
   Settings2,
@@ -150,7 +153,7 @@ export default function App() {
     const source = new EventSource(`/api/runs/${runId}/events`);
     eventSourceRef.current = source;
     source.onopen = () => setFormError("");
-    source.addEventListener("node.completed", (event) => {
+    source.addEventListener("node.progress", (event) => {
       setNodes((current) => [...current, JSON.parse(event.data) as NodeEvent]);
     });
     source.addEventListener("report.updated", (event) => {
@@ -194,14 +197,19 @@ export default function App() {
           <p className="eyebrow">MULTI-AGENT RESEARCH CONSOLE</p>
           <h1>TradingAgents <span>RL</span></h1>
         </div>
+        <nav className="page-nav" aria-label="分析流程">
+          <span className={!run ? "active" : "complete"}>1&nbsp; 任务配置</span>
+          <ChevronRight size={14} aria-hidden="true" />
+          <span className={run ? "active" : ""}>2&nbsp; 分析报告</span>
+        </nav>
         <div className={`run-status ${run?.status ?? "idle"}`} role="status" aria-live="polite">
           <CircleDot size={14} />
           {statusLabel(run?.status)}
         </div>
       </header>
 
-      <main className={`workspace ${run ? "has-run" : ""}`}>
-        <section className="control-panel" aria-labelledby="task-title">
+      {!run ? <main className="configure-page">
+        <section className="control-panel configure-card" aria-labelledby="task-title">
           <div className="section-heading">
             <div><p className="step-label">01 / CONFIGURE</p><h2 id="task-title">新建分析任务</h2></div>
             <Settings2 size={20} aria-hidden="true" />
@@ -290,19 +298,39 @@ export default function App() {
             </div>
 
             {formError && <div className="form-error" role="alert">{formError}</div>}
-            <button className="primary-button" type="submit" disabled={isBusy}>
-              {isBusy ? <><RefreshCw className="spin" size={18} />分析进行中</> : <><Play size={18} />开始多Agent分析</>}
-            </button>
+            <div className="form-footer">
+              <p>提交后进入分析工作台，实时查看Agent节点和报告生成进度。</p>
+              <button className="primary-button" type="submit" disabled={isBusy}>
+                {isBusy ? <><RefreshCw className="spin" size={18} />分析进行中</> : <><Play size={18} />开始多Agent分析</>}
+              </button>
+            </div>
           </form>
         </section>
-
-        <section className="result-panel" aria-labelledby="result-title">
-          {!run ? <EmptyState /> : (
-            <>
+      </main> : <main className="analysis-page">
+        <section className="result-panel analysis-card" aria-labelledby="result-title">
               <div className="run-header">
-                <div><p className="step-label">02 / EXECUTION</p><h2 id="result-title">{run.request.ticker} 分析工作台</h2></div>
+                <div className="run-title-group">
+                  <button
+                    className="back-button"
+                    onClick={reset}
+                    disabled={isBusy}
+                    aria-label={isBusy ? "分析运行中，暂时无法返回" : "返回任务配置"}
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                  <div><p className="step-label">02 / EXECUTION & REPORT</p><h2 id="result-title">{run.request.ticker} 分析工作台</h2></div>
+                </div>
                 <div className="run-meta"><span>{modeTitle(run.request.orchestration_mode)}</span><span>{run.request.analysis_date}</span></div>
               </div>
+
+              {formError && <div className="connection-warning" role="status">{formError}</div>}
+
+              <ProcessGraph
+                analysts={run.request.analysts}
+                events={nodes}
+                mode={run.request.orchestration_mode}
+                finished={run.status === "completed"}
+              />
 
               <div className="execution-grid">
                 <aside className="timeline-panel" aria-label="Agent执行进度">
@@ -333,21 +361,180 @@ export default function App() {
 
               {run.status === "completed" && <CompletionSummary run={run} onReset={reset} />}
               {run.status === "failed" && <div className="run-error" role="alert"><strong>任务未完成</strong><p>{run.error}</p><button onClick={reset}>重新创建任务</button></div>}
-            </>
-          )}
         </section>
-      </main>
+      </main>}
     </div>
   );
 }
 
-function EmptyState() {
-  return <div className="empty-state"><div className="orb"><Bot size={34} /></div><p className="step-label">READY FOR ANALYSIS</p><h2>让Agent团队开始研究</h2><p>配置股票、分析师和编排模式。运行过程中可以实时查看节点完成状态，结束后阅读完整报告。</p></div>;
-}
-
 function TimelineItem({ node, index }: { node: NodeEvent; index: number }) {
   const Icon = node.kind === "tool" ? Wrench : node.kind === "scheduler" ? Bot : Check;
-  return <div className={`timeline-item ${node.kind}`}><div className="timeline-icon"><Icon size={14} /></div><div><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span>{node.selected_action.replace(/[<>]/g, "")}</span>}</div></div>;
+  return <div className={`timeline-item ${node.kind} ${node.status}`}><div className="timeline-icon"><Icon size={14} /></div><div><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span>{actionLabel(node.selected_action)}</span>}</div></div>;
+}
+
+const ACTION_NODE: Record<string, string> = {
+  ACT_MARKET: "Market Analyst",
+  ACT_SENTIMENT: "Sentiment Analyst",
+  ACT_NEWS: "News Analyst",
+  ACT_FUNDAMENTALS: "Fundamentals Analyst",
+  ACT_BULL: "Bull Researcher",
+  ACT_BEAR: "Bear Researcher",
+  ACT_RESEARCH_MANAGER: "Research Manager",
+  ACT_TRADER: "Trader",
+  ACT_AGGRESSIVE: "Aggressive Analyst",
+  ACT_CONSERVATIVE: "Conservative Analyst",
+  ACT_NEUTRAL: "Neutral Analyst",
+  ACT_PORTFOLIO_MANAGER: "Portfolio Manager",
+  ACT_STOP: "完成",
+};
+
+const ANALYST_NODE: Record<Analyst, string> = {
+  market: "Market Analyst",
+  social: "Sentiment Analyst",
+  news: "News Analyst",
+  fundamentals: "Fundamentals Analyst",
+};
+
+function actionLabel(action: string) {
+  return action.replace(/[<>]/g, "");
+}
+
+function ProcessGraph({ analysts, events, mode, finished }: {
+  analysts: Analyst[];
+  events: NodeEvent[];
+  mode: OrchestrationMode;
+  finished: boolean;
+}) {
+  const completed = new Set(events.filter((event) => event.status === "completed").map((event) => event.node));
+  const latestSchedulerIndex = events
+    .map((event) => Boolean(event.kind === "scheduler" && event.selected_action))
+    .lastIndexOf(true);
+  const schedulerTarget = latestSchedulerIndex >= 0
+    ? ACTION_NODE[actionLabel(events[latestSchedulerIndex].selected_action ?? "")]
+    : undefined;
+  const targetFinished = schedulerTarget
+    ? events.slice(latestSchedulerIndex + 1).some((event) => event.node === schedulerTarget && event.status === "completed")
+    : false;
+  const running = new Set(events.filter((event) => event.status === "running").map((event) => event.node));
+  if (schedulerTarget && !targetFinished) running.add(schedulerTarget);
+  const path = events
+    .filter((event) => event.kind !== "tool" && event.node !== "Scheduler")
+    .map((event) => event.node)
+    .filter((node, index, values) => index === 0 || node !== values[index - 1]);
+
+  const nodeState = (node: string): GraphNodeState => {
+    if (completed.has(node)) return "completed";
+    if (running.has(node)) return "running";
+    if (finished) return "skipped";
+    return "pending";
+  };
+  const analystNodes = analysts.map((key, index) => ({
+    name: ANALYST_NODE[key],
+    x: 46 + (index % 2) * 134,
+    y: 154 + Math.floor(index / 2) * 68,
+  }));
+  const hasStarted = (names: string[]) => names.some((name) => nodeState(name) !== "pending");
+  const researchNodes = ["Bull Researcher", "Bear Researcher", "Research Manager"];
+  const riskNodes = ["Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"];
+
+  return <section className="process-graph" aria-label="多Agent分析阶段图">
+    <div className="process-heading">
+      <div><GitBranch size={17} /><h3>Agent阶段流程</h3></div>
+      <span>{mode === "static" ? "固定LangGraph" : "动态Scheduler路径"}</span>
+    </div>
+    <div className="workflow-canvas">
+      <svg viewBox="0 0 1460 330" role="img" aria-labelledby="workflow-title workflow-description">
+        <title id="workflow-title">TradingAgents实时分析流程</title>
+        <desc id="workflow-description">从编排入口、分析师团队、研究辩论、交易、风险决策到最终报告的实时节点状态。</desc>
+        <defs>
+          <marker id="flow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0L8 4L0 8Z" />
+          </marker>
+          <filter id="active-glow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+
+        <text className="lane-label" x="28" y="31">编排策略</text>
+        <text className="lane-label" x="28" y="101">AGENT EXECUTION</text>
+        <path className="lane-divider" d="M28 48H1432M28 111H1432" />
+
+        <g className={`router-node ${events.length ? "completed" : "running"}`}>
+          <rect x="28" y="54" width="252" height="43" rx="12" />
+          <circle cx="50" cy="75.5" r="7" />
+          <text x="66" y="80">{mode === "static" ? "Static LangGraph Router" : "Dynamic Scheduler"}</text>
+          <text className="node-state" x="263" y="80" textAnchor="end">{events.length ? "已启动" : "初始化"}</text>
+        </g>
+
+        <path className="flow-link active" d="M154 97V116" markerEnd="url(#flow-arrow)" />
+        <FlowLink from={310} to={336} active={hasStarted(researchNodes)} />
+        <FlowLink from={626} to={652} active={nodeState("Trader") !== "pending"} />
+        <FlowLink from={914} to={940} active={hasStarted(riskNodes)} />
+        <FlowLink from={1082} to={1108} active={nodeState("Portfolio Manager") !== "pending"} />
+        <FlowLink from={1368} to={1392} active={finished} />
+
+        <StageShell x={28} width={282} index="01" label="多源分析" />
+        {analystNodes.map((node) => <SvgAgentNode {...node} state={nodeState(node.name)} key={node.name} />)}
+
+        <StageShell x={336} width={290} index="02" label="研究辩论" />
+        <SvgAgentNode x={354} y={154} name="Bull Researcher" state={nodeState("Bull Researcher")} />
+        <SvgAgentNode x={498} y={154} name="Bear Researcher" state={nodeState("Bear Researcher")} />
+        <SvgAgentNode x={402} y={222} name="Research Manager" state={nodeState("Research Manager")} wide />
+
+        <StageShell x={652} width={262} index="03" label="交易计划" />
+        <SvgAgentNode x={711} y={188} name="Trader" state={nodeState("Trader")} wide />
+
+        <StageShell x={940} width={142} index="04" label="风险评估" />
+        <SvgAgentNode x={950} y={142} name="Aggressive Analyst" state={nodeState("Aggressive Analyst")} compact />
+        <SvgAgentNode x={950} y={197} name="Conservative Analyst" state={nodeState("Conservative Analyst")} compact />
+        <SvgAgentNode x={950} y={252} name="Neutral Analyst" state={nodeState("Neutral Analyst")} compact />
+
+        <StageShell x={1108} width={260} index="05" label="组合决策" />
+        <SvgAgentNode x={1167} y={188} name="Portfolio Manager" state={nodeState("Portfolio Manager")} wide />
+
+        <g className={`final-node ${finished ? "completed" : "pending"}`}>
+          <rect x="1392" y="160" width="56" height="96" rx="14" />
+          <text x="1420" y="194" textAnchor="middle">报告</text>
+          <text x="1420" y="215" textAnchor="middle">输出</text>
+          <text className="node-state" x="1420" y="239" textAnchor="middle">{finished ? "完成" : "等待"}</text>
+        </g>
+      </svg>
+    </div>
+    <div className="actual-path">
+      <span>实际调用路径</span>
+      <div>{path.length ? path.map((node, index) => <span key={`${index}-${node}`}>{index > 0 && <ChevronRight size={12} />}{node}</span>) : "等待第一个Agent节点"}</div>
+    </div>
+  </section>;
+}
+
+type GraphNodeState = "pending" | "running" | "completed" | "skipped";
+
+function FlowLink({ from, to, active }: { from: number; to: number; active: boolean }) {
+  return <path className={`flow-link ${active ? "active" : ""}`} d={`M${from} 205H${to}`} markerEnd="url(#flow-arrow)" />;
+}
+
+function StageShell({ x, width, index, label }: { x: number; width: number; index: string; label: string }) {
+  return <g className="stage-shell"><rect x={x} y="122" width={width} height="188" rx="16" /><text className="stage-index" x={x + 16} y="145">{index}</text><text className="stage-label" x={x + 46} y="145">{label}</text></g>;
+}
+
+function SvgAgentNode({ x, y, name, state, wide = false, compact = false }: {
+  x: number;
+  y: number;
+  name: string;
+  state: GraphNodeState;
+  wide?: boolean;
+  compact?: boolean;
+}) {
+  const width = compact ? 122 : wide ? 172 : 128;
+  const label = name.replace(" Analyst", "").replace(" Researcher", "").replace(" Manager", " Mgr");
+  const status = { pending: "等待", running: "运行中", completed: "完成", skipped: "未调用" }[state];
+  return <g className={`svg-agent-node ${state}`} filter={state === "running" ? "url(#active-glow)" : undefined}>
+    <rect x={x} y={y} width={width} height="50" rx="10" />
+    <circle cx={x + 14} cy={y + 16} r="5" />
+    <text className="agent-name" x={x + 25} y={y + 20}>{label}</text>
+    <text className="node-state" x={x + 14} y={y + 39}>{status}</text>
+  </g>;
 }
 
 function CompletionSummary({ run, onReset }: { run: RunSnapshot; onReset: () => void }) {

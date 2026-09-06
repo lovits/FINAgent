@@ -30,6 +30,13 @@ REPORT_FIELDS = {
     "final_trade_decision": "Portfolio Decision",
 }
 
+ANALYST_REPORT_BY_NODE = {
+    "Market Analyst": "market_report",
+    "Sentiment Analyst": "sentiment_report",
+    "News Analyst": "news_report",
+    "Fundamentals Analyst": "fundamentals_report",
+}
+
 
 def _now_ms() -> int:
     return int(time() * 1000)
@@ -101,11 +108,15 @@ class GraphEventProjector:
         for node_name, update in payload.items():
             if node_name.startswith("Msg Clear"):
                 continue
-            data = {"node": node_name, "kind": _node_kind(node_name)}
+            data = {
+                "node": node_name,
+                "kind": _node_kind(node_name),
+                "status": _node_status(node_name, update),
+            }
             if isinstance(update, dict) and update.get("scheduler_action"):
                 data["selected_action"] = update["scheduler_action"]
                 data["valid_actions"] = update.get("scheduler_valid_actions", [])
-            self.record.emit("node.completed", data)
+            self.record.emit("node.progress", data)
 
     def _project_reports(self, state: dict[str, Any]) -> None:
         reports = _report_sections(state)
@@ -220,6 +231,13 @@ def _node_kind(node_name: str) -> str:
     if node_name.startswith("tools_"):
         return "tool"
     return "agent"
+
+
+def _node_status(node_name: str, update: object) -> str:
+    report_field = ANALYST_REPORT_BY_NODE.get(node_name)
+    if report_field and isinstance(update, dict) and not update.get(report_field):
+        return "running"
+    return "completed"
 
 
 def _report_sections(state: dict[str, Any]) -> dict[str, str]:

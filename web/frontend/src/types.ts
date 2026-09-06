@@ -26,6 +26,7 @@ export interface RunSnapshot {
 export interface NodeEvent {
   node: string;
   kind: "scheduler" | "tool" | "agent";
+  status: "running" | "completed";
   selected_action?: string;
   valid_actions?: string[];
 }

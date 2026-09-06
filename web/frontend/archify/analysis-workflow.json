@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "TradingAgents-RL 实时分析流程",
+    "locale": "zh-CN",
+    "animation": "trace",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "routing", "label": "编排策略" },
+    { "id": "agents", "label": "Agent 执行" },
+    { "id": "output", "label": "报告输出" }
+  ],
+  "phases": [
+    { "id": "analysis", "label": "多源分析", "fromCol": 0, "toCol": 1 },
+    { "id": "decision", "label": "研究与决策", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "reporting", "label": "报告交付", "fromCol": 5, "toCol": 5 }
+  ],
+  "mainPath": ["router", "analysts", "research", "trader", "risk", "report"],
+  "nodes": [
+    { "id": "router", "lane": "routing", "col": 0, "type": "messagebus", "label": "编排入口", "sublabel": "Static / Teacher / Learned", "width": 150 },
+    { "id": "analysts", "lane": "agents", "col": 1, "type": "backend", "label": "分析师团队", "sublabel": "1 至 4 名分析师", "width": 144 },
+    { "id": "research", "lane": "agents", "col": 2, "type": "backend", "label": "研究辩论", "sublabel": "Bull / Bear / Manager", "width": 144 },
+    { "id": "trader", "lane": "agents", "col": 3, "type": "backend", "label": "Trader", "sublabel": "生成交易计划", "width": 132 },
+    { "id": "risk", "lane": "agents", "col": 4, "type": "security", "label": "风险与组合决策", "sublabel": "Risk Team / Portfolio", "width": 154 },
+    { "id": "report", "lane": "output", "col": 5, "type": "frontend", "label": "完整分析报告", "sublabel": "逐段更新并最终汇总", "width": 154 }
+  ],
+  "edges": [
+    { "id": "route-analysis", "from": "router", "to": "analysts", "label": "选择合法 Agent", "variant": "emphasis", "role": "main" },
+    { "id": "analysis-research", "from": "analysts", "to": "research", "label": "汇总报告", "variant": "default", "role": "main" },
+    { "id": "research-trader", "from": "research", "to": "trader", "label": "投资计划", "variant": "default", "role": "main" },
+    { "id": "trader-risk", "from": "trader", "to": "risk", "label": "交易建议", "variant": "security", "role": "main" },
+    { "id": "risk-report", "from": "risk", "to": "report", "label": "最终决策", "variant": "emphasis", "role": "main" }
+  ],
+  "semanticChecks": {
+    "allowedRoots": ["router"],
+    "allowedTerminals": ["report"],
+    "requiredPaths": [
+      { "from": "router", "to": "report" }
+    ]
+  }
+}

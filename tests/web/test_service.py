@@ -58,9 +58,9 @@ def test_run_manager_streams_nodes_reports_and_completion(tmp_path, monkeypatch)
     assert record.report_sections["market_report"].startswith("# Market")
     assert [event["type"] for event in record.events] == [
         "run.started",
-        "node.completed",
+        "node.progress",
         "report.updated",
-        "node.completed",
+        "node.progress",
         "report.updated",
         "report.updated",
         "run.completed",
