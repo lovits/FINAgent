@@ -130,6 +130,45 @@ def test_sentiment_prompt_states_constraint(monkeypatch):
 
 
 @pytest.mark.unit
+def test_a_share_sentiment_uses_mainland_news_and_skips_foreign_social(monkeypatch):
+    monkeypatch.setattr(
+        sentiment.get_news,
+        "func",
+        lambda *a, **k: "Source: Eastmoney via AKShare",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        sentiment,
+        "fetch_stocktwits_messages",
+        lambda *a, **k: pytest.fail("A-share mode must not call StockTwits"),
+    )
+    monkeypatch.setattr(
+        sentiment,
+        "fetch_reddit_posts",
+        lambda *a, **k: pytest.fail("A-share mode must not call Reddit"),
+    )
+
+    news, stocktwits, reddit = sentiment._prefetch_source_blocks(
+        "600519.SS", "2026-09-01", "2026-09-07"
+    )
+    prompt = sentiment._build_system_message(
+        ticker="600519.SS",
+        start_date="2026-09-01",
+        end_date="2026-09-07",
+        news_source="AKShare / Eastmoney",
+        news_block=news,
+        stocktwits_block=stocktwits,
+        reddit_block=reddit,
+    )
+
+    assert "AKShare / Eastmoney" in prompt
+    assert "Yahoo Finance" not in prompt
+    assert stocktwits == reddit == (
+        "<not queried: A-share mode uses mainland-China sources only>"
+    )
+
+
+@pytest.mark.unit
 def test_tool_using_analysts_keep_their_date_guidance():
     # The analysts that really do call tools keep the wording that anchors their
     # tool date ranges (#836) — this fix is scoped to no-tool agents.
