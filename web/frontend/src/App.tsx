@@ -6,18 +6,23 @@ import {
   Check,
   ChevronRight,
   CircleDot,
+  Download,
   FileText,
   GitBranch,
+  KeyRound,
   Play,
   RefreshCw,
+  Save,
   Settings2,
   Sparkles,
+  Square,
   Wrench,
+  X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
-import { createRun, getRun } from "./api";
+import { cancelRun, createRun, getRun, getSettings, updateSettings } from "./api";
 import type {
   Analyst,
   NodeEvent,
@@ -26,7 +31,14 @@ import type {
   ResearchDepth,
   RunRequest,
   RunSnapshot,
+  WebSettings,
 } from "./types";
+
+interface CompletedRun {
+  snapshot: RunSnapshot;
+  nodes: NodeEvent[];
+  reports: Record<string, string>;
+}
 
 const MODES: Array<{
   value: OrchestrationMode;
@@ -101,17 +113,38 @@ export default function App() {
   const [run, setRun] = useState<RunSnapshot | null>(null);
   const [nodes, setNodes] = useState<NodeEvent[]>([]);
   const [reports, setReports] = useState<Record<string, string>>({});
+  const [completedRuns, setCompletedRuns] = useState<CompletedRun[]>([]);
+  const [batchTotal, setBatchTotal] = useState(1);
   const [activeReport, setActiveReport] = useState("market_report");
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
+  const [settings, setSettings] = useState<WebSettings | null>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [expertModel, setExpertModel] = useState("");
+  const [teacherModel, setTeacherModel] = useState("");
+  const [settingsMessage, setSettingsMessage] = useState("");
   const eventSourceRef = useRef<EventSource | null>(null);
+  const queueRef = useRef<RunRequest[]>([]);
+  const nodesRef = useRef<NodeEvent[]>([]);
+  const reportsRef = useRef<Record<string, string>>({});
+  const completedRunsRef = useRef<CompletedRun[]>([]);
 
-  const isBusy = run?.status === "queued" || run?.status === "running";
+  const isBusy = ["queued", "running", "cancelling"].includes(run?.status ?? "");
   const visibleReports = useMemo(
     () => REPORT_ORDER.filter((key) => reports[key]),
     [reports],
   );
 
-  useEffect(() => () => eventSourceRef.current?.close(), []);
+  useEffect(() => {
+    void getSettings()
+      .then((value) => {
+        setSettings(value);
+        setExpertModel(value.expert_model);
+        setTeacherModel(value.teacher_model);
+      })
+      .catch(() => setSettingsMessage("无法读取本地模型设置。"));
+    return () => eventSourceRef.current?.close();
+  }, []);
 
   function updateMode(mode: OrchestrationMode) {
     setForm((current) => ({
@@ -136,11 +169,28 @@ export default function App() {
       setFormError("请至少选择一名分析师。");
       return;
     }
+    const tickers = [...new Set(form.ticker.split(/[,，\s]+/).map((value) => value.trim()).filter(Boolean))];
+    if (!tickers.length) {
+      setFormError("请至少输入一个股票代码。");
+      return;
+    }
+    const requests = tickers.map((ticker) => ({ ...form, ticker }));
+    queueRef.current = requests.slice(1);
+    setBatchTotal(requests.length);
+    completedRunsRef.current = [];
+    setCompletedRuns([]);
     setFormError("");
+    await startRun(requests[0]);
+  }
+
+  async function startRun(payload: RunRequest) {
+    nodesRef.current = [];
+    reportsRef.current = {};
     setNodes([]);
     setReports({});
+    setSelectedNode(null);
     try {
-      const created = await createRun(form);
+      const created = await createRun(payload);
       setRun(created);
       connectEvents(created.run_id);
     } catch (error) {
@@ -154,17 +204,19 @@ export default function App() {
     eventSourceRef.current = source;
     source.onopen = () => setFormError("");
     source.addEventListener("node.progress", (event) => {
-      setNodes((current) => [...current, JSON.parse(event.data) as NodeEvent]);
+      const item = JSON.parse(event.data) as NodeEvent;
+      nodesRef.current = [...nodesRef.current, item];
+      setNodes(nodesRef.current);
     });
     source.addEventListener("report.updated", (event) => {
       const report = JSON.parse(event.data) as ReportEvent;
-      setReports((current) => {
-        if (Object.keys(current).length === 0) setActiveReport(report.section);
-        return { ...current, [report.section]: report.content };
-      });
+      if (Object.keys(reportsRef.current).length === 0) setActiveReport(report.section);
+      reportsRef.current = { ...reportsRef.current, [report.section]: report.content };
+      setReports(reportsRef.current);
     });
     source.addEventListener("run.completed", () => finishRun(runId, source));
     source.addEventListener("run.failed", () => finishRun(runId, source));
+    source.addEventListener("run.cancelled", () => finishRun(runId, source));
     source.onerror = () => {
       if (source.readyState !== EventSource.CLOSED) {
         setFormError("实时连接暂时中断，正在自动重连。");
@@ -175,28 +227,106 @@ export default function App() {
   async function finishRun(runId: string, source: EventSource) {
     source.close();
     const snapshot = await getRun(runId);
-    setRun(snapshot);
-    setReports(snapshot.report_sections);
-    const first = REPORT_ORDER.find((key) => snapshot.report_sections[key]);
-    if (first) setActiveReport(first);
+    const completed = {
+      snapshot,
+      nodes: [...nodesRef.current],
+      reports: { ...snapshot.report_sections },
+    };
+    completedRunsRef.current = [...completedRunsRef.current, completed];
+    setCompletedRuns(completedRunsRef.current);
+    const next = queueRef.current.shift();
+    if (next && snapshot.status !== "cancelled") {
+      await startRun(next);
+      return;
+    }
+    showCompleted(completed);
   }
 
   function reset() {
+    queueRef.current = [];
     eventSourceRef.current?.close();
     setRun(null);
     setNodes([]);
     setReports({});
+    setCompletedRuns([]);
+    completedRunsRef.current = [];
+    setBatchTotal(1);
+    setSelectedNode(null);
     setFormError("");
+  }
+
+  async function stopAndReturn() {
+    queueRef.current = [];
+    eventSourceRef.current?.close();
+    if (run && isBusy) {
+      try {
+        await cancelRun(run.run_id);
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : "停止任务失败。");
+      }
+    }
+    reset();
+  }
+
+  function returnToConfig() {
+    if (isBusy) void stopAndReturn();
+    else reset();
+  }
+
+  function showCompleted(value: CompletedRun) {
+    setRun(value.snapshot);
+    setNodes(value.nodes);
+    setReports(value.reports);
+    const first = REPORT_ORDER.find((key) => value.reports[key]);
+    if (first) setActiveReport(first);
+    setSelectedNode(null);
+  }
+
+  async function saveSettings() {
+    setSettingsMessage("");
+    try {
+      const value = await updateSettings({
+        ...(keyInput.trim() ? { openrouter_api_key: keyInput.trim() } : {}),
+        expert_model: expertModel,
+        teacher_model: teacherModel,
+      });
+      setSettings(value);
+      setKeyInput("");
+      setSettingsMessage("模型设置已保存到本机.env。完整Key不会显示在页面上。");
+    } catch (error) {
+      setSettingsMessage(error instanceof Error ? error.message : "设置保存失败。");
+    }
+  }
+
+  async function exportReport() {
+    if (!run?.complete_report) return;
+    try {
+      const filename = `${run.request.ticker}_${run.request.analysis_date}_report.md`;
+      const picker = (window as SavePickerWindow).showSaveFilePicker;
+      if (picker) {
+        const handle = await picker({ suggestedName: filename });
+        const writable = await handle.createWritable();
+        await writable.write(run.complete_report);
+        await writable.close();
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([run.complete_report], { type: "text/markdown" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setFormError(error instanceof Error ? error.message : "报告导出失败。");
+    }
   }
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand-mark" aria-hidden="true"><BarChart3 size={20} /></div>
-        <div>
-          <p className="eyebrow">MULTI-AGENT RESEARCH CONSOLE</p>
-          <h1>TradingAgents <span>RL</span></h1>
-        </div>
+        <h1>FIN <span>Agents</span></h1>
         <nav className="page-nav" aria-label="分析流程">
           <span className={!run ? "active" : "complete"}>1&nbsp; 任务配置</span>
           <ChevronRight size={14} aria-hidden="true" />
@@ -217,11 +347,11 @@ export default function App() {
           <form onSubmit={submit}>
             <div className="field-grid">
               <label className="field">
-                <span>股票代码</span>
+                <span>股票代码（多个代码用逗号或空格分隔）</span>
                 <input
                   value={form.ticker}
                   onChange={(event) => setForm({ ...form, ticker: event.target.value.toUpperCase() })}
-                  placeholder="例如 NVDA"
+                  placeholder="例如 NVDA, AAPL, MSFT"
                   disabled={isBusy}
                   required
                 />
@@ -297,6 +427,40 @@ export default function App() {
               </label>
             </div>
 
+            <details className="settings-panel">
+              <summary><KeyRound size={16} />模型与API设置</summary>
+              <div className="settings-grid">
+                <label className="field">
+                  <span>OpenRouter API Key</span>
+                  <input
+                    type="password"
+                    value={keyInput}
+                    onChange={(event) => setKeyInput(event.target.value)}
+                    placeholder={settings?.masked_key ?? "输入OpenRouter Key"}
+                    autoComplete="off"
+                  />
+                  <small>{settings?.key_configured ? `当前：${settings.masked_key}` : "尚未配置"}</small>
+                </label>
+                <label className="field">
+                  <span>专家Agent模型</span>
+                  <input value={expertModel} onChange={(event) => setExpertModel(event.target.value)} placeholder="z-ai/glm-5.3-flash" />
+                </label>
+                <label className="field">
+                  <span>Teacher调度模型</span>
+                  <input value={teacherModel} onChange={(event) => setTeacherModel(event.target.value)} placeholder="z-ai/glm-5.3-flash" />
+                </label>
+                <div className="local-model-summary">
+                  <span>本地调度器</span>
+                  <strong>{settings?.scheduler_base_model ?? "未读取"}</strong>
+                  <small>{settings?.scheduler_adapter ?? "未配置LoRA"}</small>
+                </div>
+              </div>
+              <div className="settings-footer">
+                <span role="status">{settingsMessage}</span>
+                <button type="button" onClick={() => void saveSettings()}><Save size={15} />保存到本机</button>
+              </div>
+            </details>
+
             {formError && <div className="form-error" role="alert">{formError}</div>}
             <div className="form-footer">
               <p>提交后进入分析工作台，实时查看Agent节点和报告生成进度。</p>
@@ -312,16 +476,23 @@ export default function App() {
                 <div className="run-title-group">
                   <button
                     className="back-button"
-                    onClick={reset}
-                    disabled={isBusy}
-                    aria-label={isBusy ? "分析运行中，暂时无法返回" : "返回任务配置"}
+                    onClick={returnToConfig}
+                    aria-label={isBusy ? "停止当前任务并返回配置" : "返回任务配置"}
                   >
-                    <ArrowLeft size={18} />
+                    {isBusy ? <Square size={16} /> : <ArrowLeft size={18} />}
                   </button>
                   <div><p className="step-label">02 / EXECUTION & REPORT</p><h2 id="result-title">{run.request.ticker} 分析工作台</h2></div>
                 </div>
-                <div className="run-meta"><span>{modeTitle(run.request.orchestration_mode)}</span><span>{run.request.analysis_date}</span></div>
+                <div className="run-meta">
+                  {batchTotal > 1 && <span>{Math.min(completedRuns.length + 1, batchTotal)} / {batchTotal}</span>}
+                  <span>{modeTitle(run.request.orchestration_mode)}</span><span>{run.request.analysis_date}</span>
+                  <span>专家：{run.models.expert ?? expertModel}</span><span>调度：{run.models.scheduler ?? "初始化中"}</span>
+                </div>
               </div>
+
+              {completedRuns.length > 1 && !isBusy && <nav className="batch-tabs" aria-label="批量任务报告">
+                {completedRuns.map((item) => <button className={run.run_id === item.snapshot.run_id ? "active" : ""} onClick={() => showCompleted(item)} key={item.snapshot.run_id}>{item.snapshot.request.ticker}</button>)}
+              </nav>}
 
               {formError && <div className="connection-warning" role="status">{formError}</div>}
 
@@ -330,6 +501,7 @@ export default function App() {
                 events={nodes}
                 mode={run.request.orchestration_mode}
                 finished={run.status === "completed"}
+                onSelectNode={setSelectedNode}
               />
 
               <div className="execution-grid">
@@ -337,7 +509,7 @@ export default function App() {
                   <div className="panel-title"><Activity size={17} /><h3>执行进度</h3><span>{nodes.length}</span></div>
                   <div className="timeline" aria-live="polite">
                     {nodes.length === 0 && <div className="waiting"><span className="pulse" />正在初始化Agent图…</div>}
-                    {nodes.map((node, index) => <TimelineItem node={node} index={index} key={`${index}-${node.node}`} />)}
+                    {nodes.map((node, index) => <TimelineItem node={node} index={index} onSelect={setSelectedNode} key={`${index}-${node.node}`} />)}
                     {isBusy && nodes.length > 0 && <div className="waiting"><span className="pulse" />等待下一节点…</div>}
                   </div>
                 </aside>
@@ -359,17 +531,18 @@ export default function App() {
                 </article>
               </div>
 
-              {run.status === "completed" && <CompletionSummary run={run} onReset={reset} />}
+              {run.status === "completed" && <CompletionSummary run={run} onReset={reset} onExport={exportReport} />}
               {run.status === "failed" && <div className="run-error" role="alert"><strong>任务未完成</strong><p>{run.error}</p><button onClick={reset}>重新创建任务</button></div>}
         </section>
+        {selectedNode && <NodeDetailDrawer node={selectedNode} events={nodes} reports={reports} onClose={() => setSelectedNode(null)} />}
       </main>}
     </div>
   );
 }
 
-function TimelineItem({ node, index }: { node: NodeEvent; index: number }) {
+function TimelineItem({ node, index, onSelect }: { node: NodeEvent; index: number; onSelect: (node: string) => void }) {
   const Icon = node.kind === "tool" ? Wrench : node.kind === "scheduler" ? Bot : Check;
-  return <div className={`timeline-item ${node.kind} ${node.status}`}><div className="timeline-icon"><Icon size={14} /></div><div><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span>{actionLabel(node.selected_action)}</span>}</div></div>;
+  return <button className={`timeline-item ${node.kind} ${node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span>{actionLabel(node.selected_action)}</span>}</span></button>;
 }
 
 const ACTION_NODE: Record<string, string> = {
@@ -399,11 +572,12 @@ function actionLabel(action: string) {
   return action.replace(/[<>]/g, "");
 }
 
-function ProcessGraph({ analysts, events, mode, finished }: {
+function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
   analysts: Analyst[];
   events: NodeEvent[];
   mode: OrchestrationMode;
   finished: boolean;
+  onSelectNode: (node: string) => void;
 }) {
   const completed = new Set(events.filter((event) => event.status === "completed").map((event) => event.node));
   const latestSchedulerIndex = events
@@ -431,11 +605,12 @@ function ProcessGraph({ analysts, events, mode, finished }: {
   const analystNodes = analysts.map((key, index) => ({
     name: ANALYST_NODE[key],
     x: 46 + (index % 2) * 134,
-    y: 154 + Math.floor(index / 2) * 68,
+    y: 116 + Math.floor(index / 2) * 68,
   }));
   const hasStarted = (names: string[]) => names.some((name) => nodeState(name) !== "pending");
   const researchNodes = ["Bull Researcher", "Bear Researcher", "Research Manager"];
   const riskNodes = ["Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"];
+  const canOpen = (node: string) => events.some((event) => event.node === node);
 
   return <section className="process-graph" aria-label="多Agent分析阶段图">
     <div className="process-heading">
@@ -443,7 +618,7 @@ function ProcessGraph({ analysts, events, mode, finished }: {
       <span>{mode === "static" ? "固定LangGraph" : "动态Scheduler路径"}</span>
     </div>
     <div className="workflow-canvas">
-      <svg viewBox="0 0 1460 330" role="img" aria-labelledby="workflow-title workflow-description">
+      <svg viewBox="0 0 1460 300" role="img" aria-labelledby="workflow-title workflow-description">
         <title id="workflow-title">TradingAgents实时分析流程</title>
         <desc id="workflow-description">从编排入口、分析师团队、研究辩论、交易、风险决策到最终报告的实时节点状态。</desc>
         <defs>
@@ -456,18 +631,16 @@ function ProcessGraph({ analysts, events, mode, finished }: {
           </filter>
         </defs>
 
-        <text className="lane-label" x="28" y="31">编排策略</text>
-        <text className="lane-label" x="28" y="101">AGENT EXECUTION</text>
-        <path className="lane-divider" d="M28 48H1432M28 111H1432" />
+        <path className="lane-divider" d="M28 70H1432" />
 
         <g className={`router-node ${events.length ? "completed" : "running"}`}>
-          <rect x="28" y="54" width="252" height="43" rx="12" />
-          <circle cx="50" cy="75.5" r="7" />
-          <text x="66" y="80">{mode === "static" ? "Static LangGraph Router" : "Dynamic Scheduler"}</text>
-          <text className="node-state" x="263" y="80" textAnchor="end">{events.length ? "已启动" : "初始化"}</text>
+          <rect x="28" y="18" width="252" height="42" rx="12" />
+          <circle cx="50" cy="39" r="7" />
+          <text x="66" y="44">{mode === "static" ? "Static LangGraph Router" : "Dynamic Scheduler"}</text>
+          <text className="node-state" x="263" y="44" textAnchor="end">{events.length ? "已启动" : "初始化"}</text>
         </g>
 
-        <path className="flow-link active" d="M154 97V116" markerEnd="url(#flow-arrow)" />
+        <path className="flow-link active" d="M154 60V76" markerEnd="url(#flow-arrow)" />
         <FlowLink from={310} to={336} active={hasStarted(researchNodes)} />
         <FlowLink from={626} to={652} active={nodeState("Trader") !== "pending"} />
         <FlowLink from={914} to={940} active={hasStarted(riskNodes)} />
@@ -475,35 +648,35 @@ function ProcessGraph({ analysts, events, mode, finished }: {
         <FlowLink from={1368} to={1392} active={finished} />
 
         <StageShell x={28} width={282} index="01" label="多源分析" />
-        {analystNodes.map((node) => <SvgAgentNode {...node} state={nodeState(node.name)} key={node.name} />)}
+        {analystNodes.map((node) => <SvgAgentNode {...node} state={nodeState(node.name)} onSelect={canOpen(node.name) ? onSelectNode : undefined} key={node.name} />)}
 
         <StageShell x={336} width={290} index="02" label="研究辩论" />
-        <SvgAgentNode x={354} y={154} name="Bull Researcher" state={nodeState("Bull Researcher")} />
-        <SvgAgentNode x={498} y={154} name="Bear Researcher" state={nodeState("Bear Researcher")} />
-        <SvgAgentNode x={402} y={222} name="Research Manager" state={nodeState("Research Manager")} wide />
+        <SvgAgentNode x={354} y={116} name="Bull Researcher" state={nodeState("Bull Researcher")} onSelect={canOpen("Bull Researcher") ? onSelectNode : undefined} />
+        <SvgAgentNode x={498} y={116} name="Bear Researcher" state={nodeState("Bear Researcher")} onSelect={canOpen("Bear Researcher") ? onSelectNode : undefined} />
+        <SvgAgentNode x={402} y={184} name="Research Manager" state={nodeState("Research Manager")} onSelect={canOpen("Research Manager") ? onSelectNode : undefined} wide />
 
         <StageShell x={652} width={262} index="03" label="交易计划" />
-        <SvgAgentNode x={711} y={188} name="Trader" state={nodeState("Trader")} wide />
+        <SvgAgentNode x={711} y={150} name="Trader" state={nodeState("Trader")} onSelect={canOpen("Trader") ? onSelectNode : undefined} wide />
 
         <StageShell x={940} width={142} index="04" label="风险评估" />
-        <SvgAgentNode x={950} y={142} name="Aggressive Analyst" state={nodeState("Aggressive Analyst")} compact />
-        <SvgAgentNode x={950} y={197} name="Conservative Analyst" state={nodeState("Conservative Analyst")} compact />
-        <SvgAgentNode x={950} y={252} name="Neutral Analyst" state={nodeState("Neutral Analyst")} compact />
+        <SvgAgentNode x={950} y={104} name="Aggressive Analyst" state={nodeState("Aggressive Analyst")} onSelect={canOpen("Aggressive Analyst") ? onSelectNode : undefined} compact />
+        <SvgAgentNode x={950} y={159} name="Conservative Analyst" state={nodeState("Conservative Analyst")} onSelect={canOpen("Conservative Analyst") ? onSelectNode : undefined} compact />
+        <SvgAgentNode x={950} y={214} name="Neutral Analyst" state={nodeState("Neutral Analyst")} onSelect={canOpen("Neutral Analyst") ? onSelectNode : undefined} compact />
 
         <StageShell x={1108} width={260} index="05" label="组合决策" />
-        <SvgAgentNode x={1167} y={188} name="Portfolio Manager" state={nodeState("Portfolio Manager")} wide />
+        <SvgAgentNode x={1167} y={150} name="Portfolio Manager" state={nodeState("Portfolio Manager")} onSelect={canOpen("Portfolio Manager") ? onSelectNode : undefined} wide />
 
         <g className={`final-node ${finished ? "completed" : "pending"}`}>
-          <rect x="1392" y="160" width="56" height="96" rx="14" />
-          <text x="1420" y="194" textAnchor="middle">报告</text>
-          <text x="1420" y="215" textAnchor="middle">输出</text>
-          <text className="node-state" x="1420" y="239" textAnchor="middle">{finished ? "完成" : "等待"}</text>
+          <rect x="1392" y="122" width="56" height="96" rx="14" />
+          <text x="1420" y="156" textAnchor="middle">报告</text>
+          <text x="1420" y="177" textAnchor="middle">输出</text>
+          <text className="node-state" x="1420" y="201" textAnchor="middle">{finished ? "完成" : "等待"}</text>
         </g>
       </svg>
     </div>
     <div className="actual-path">
       <span>实际调用路径</span>
-      <div>{path.length ? path.map((node, index) => <span key={`${index}-${node}`}>{index > 0 && <ChevronRight size={12} />}{node}</span>) : "等待第一个Agent节点"}</div>
+      <div>{path.length ? path.map((node, index) => <span key={`${index}-${node}`}>{index > 0 && <ChevronRight size={12} />}<button onClick={() => onSelectNode(node)}>{node}</button></span>) : "等待第一个Agent节点"}</div>
     </div>
   </section>;
 }
@@ -511,25 +684,26 @@ function ProcessGraph({ analysts, events, mode, finished }: {
 type GraphNodeState = "pending" | "running" | "completed" | "skipped";
 
 function FlowLink({ from, to, active }: { from: number; to: number; active: boolean }) {
-  return <path className={`flow-link ${active ? "active" : ""}`} d={`M${from} 205H${to}`} markerEnd="url(#flow-arrow)" />;
+  return <path className={`flow-link ${active ? "active" : ""}`} d={`M${from} 167H${to}`} markerEnd="url(#flow-arrow)" />;
 }
 
 function StageShell({ x, width, index, label }: { x: number; width: number; index: string; label: string }) {
-  return <g className="stage-shell"><rect x={x} y="122" width={width} height="188" rx="16" /><text className="stage-index" x={x + 16} y="145">{index}</text><text className="stage-label" x={x + 46} y="145">{label}</text></g>;
+  return <g className="stage-shell"><rect x={x} y="80" width={width} height="194" rx="16" /><text className="stage-index" x={x + 16} y="103">{index}</text><text className="stage-label" x={x + 46} y="103">{label}</text></g>;
 }
 
-function SvgAgentNode({ x, y, name, state, wide = false, compact = false }: {
+function SvgAgentNode({ x, y, name, state, wide = false, compact = false, onSelect }: {
   x: number;
   y: number;
   name: string;
   state: GraphNodeState;
   wide?: boolean;
   compact?: boolean;
+  onSelect?: (node: string) => void;
 }) {
   const width = compact ? 122 : wide ? 172 : 128;
   const label = name.replace(" Analyst", "").replace(" Researcher", "").replace(" Manager", " Mgr");
   const status = { pending: "等待", running: "运行中", completed: "完成", skipped: "未调用" }[state];
-  return <g className={`svg-agent-node ${state}`} filter={state === "running" ? "url(#active-glow)" : undefined}>
+  return <g className={`svg-agent-node ${state} ${onSelect ? "clickable" : ""}`} filter={state === "running" ? "url(#active-glow)" : undefined} role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} onClick={() => onSelect?.(name)} onKeyDown={(event) => { if (onSelect && (event.key === "Enter" || event.key === " ")) onSelect(name); }}>
     <rect x={x} y={y} width={width} height="50" rx="10" />
     <circle cx={x + 14} cy={y + 16} r="5" />
     <text className="agent-name" x={x + 25} y={y + 20}>{label}</text>
@@ -537,9 +711,48 @@ function SvgAgentNode({ x, y, name, state, wide = false, compact = false }: {
   </g>;
 }
 
-function CompletionSummary({ run, onReset }: { run: RunSnapshot; onReset: () => void }) {
+const NODE_REPORT: Record<string, string> = {
+  "Market Analyst": "market_report",
+  "Sentiment Analyst": "sentiment_report",
+  "News Analyst": "news_report",
+  "Fundamentals Analyst": "fundamentals_report",
+  "Bull Researcher": "investment_plan",
+  "Bear Researcher": "investment_plan",
+  "Research Manager": "investment_plan",
+  Trader: "trader_investment_plan",
+  "Aggressive Analyst": "final_trade_decision",
+  "Conservative Analyst": "final_trade_decision",
+  "Neutral Analyst": "final_trade_decision",
+  "Portfolio Manager": "final_trade_decision",
+};
+
+function NodeDetailDrawer({ node, events, reports, onClose }: {
+  node: string;
+  events: NodeEvent[];
+  reports: Record<string, string>;
+  onClose: () => void;
+}) {
+  const occurrences = events.map((event, index) => ({ event, index })).filter((item) => item.event.node === node);
+  const latest = occurrences.at(-1)?.event;
+  const reportKey = NODE_REPORT[node];
+  const report = reportKey ? reports[reportKey] : "";
+  const tools = occurrences.flatMap((item) => item.event.tool_calls ?? []);
+  return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <aside className="node-drawer" role="dialog" aria-modal="true" aria-labelledby="node-detail-title">
+      <header><div><p className="step-label">NODE TRACE</p><h2 id="node-detail-title">{node}</h2></div><button onClick={onClose} aria-label="关闭节点详情"><X size={18} /></button></header>
+      <div className="drawer-section"><h3>执行记录</h3>{occurrences.map(({ event, index }) => <div className="trace-row" key={index}><span>STEP {String(index + 1).padStart(2, "0")}</span><strong>{event.status === "completed" ? "已完成" : "运行中"}</strong>{event.selected_action && <small>{actionLabel(event.selected_action)}</small>}</div>)}</div>
+      {latest?.valid_actions?.length ? <div className="drawer-section"><h3>Scheduler合法动作</h3><div className="action-chips">{latest.valid_actions.map((action) => <span key={action}>{actionLabel(action)}</span>)}</div></div> : null}
+      {tools.length ? <div className="drawer-section"><h3>工具调用</h3>{tools.map((tool, index) => <div className="tool-detail" key={`${tool.name}-${index}`}><strong>{tool.name}</strong><pre>{JSON.stringify(tool.args, null, 2)}</pre></div>)}</div> : null}
+      {latest?.message ? <div className="drawer-section"><h3>Agent消息</h3><pre className="message-detail">{latest.message}</pre></div> : null}
+      {report ? <div className="drawer-section"><h3>阶段报告</h3><div className="drawer-markdown"><ReactMarkdown>{report}</ReactMarkdown></div></div> : null}
+      {!latest?.message && !tools.length && !report && <p className="drawer-empty">当前节点尚未产生可展示内容。</p>}
+    </aside>
+  </div>;
+}
+
+function CompletionSummary({ run, onReset, onExport }: { run: RunSnapshot; onReset: () => void; onExport: () => Promise<void> }) {
   const totalTokens = (run.metrics.input_tokens ?? 0) + (run.metrics.output_tokens ?? 0);
-  return <section className="completion-summary"><div><p className="step-label">03 / COMPLETE</p><h3>分析报告已完成</h3></div><dl><div><dt>最终信号</dt><dd>{run.signal ?? "已生成"}</dd></div><div><dt>LLM调用</dt><dd>{run.metrics.llm_calls ?? 0}</dd></div><div><dt>工具调用</dt><dd>{run.metrics.tool_calls ?? 0}</dd></div><div><dt>Token</dt><dd>{totalTokens.toLocaleString()}</dd></div></dl><button className="secondary-button" onClick={onReset}>新建任务</button></section>;
+  return <section className="completion-summary"><div><p className="step-label">03 / COMPLETE</p><h3>分析报告已完成</h3></div><dl><div><dt>最终信号</dt><dd>{run.signal ?? "已生成"}</dd></div><div><dt>LLM调用</dt><dd>{run.metrics.llm_calls ?? 0}</dd></div><div><dt>工具调用</dt><dd>{run.metrics.tool_calls ?? 0}</dd></div><div><dt>Token</dt><dd>{totalTokens.toLocaleString()}</dd></div></dl><div className="completion-actions"><button className="secondary-button" onClick={() => void onExport()}><Download size={15} />导出报告</button><button className="secondary-button" onClick={onReset}>新建任务</button></div></section>;
 }
 
 function statusLabel(status?: RunSnapshot["status"]) {
@@ -547,9 +760,20 @@ function statusLabel(status?: RunSnapshot["status"]) {
   return {
     queued: "等待执行",
     running: "分析运行中",
+    cancelling: "正在停止",
+    cancelled: "已停止",
     completed: "报告已完成",
     failed: "执行失败",
   }[status];
+}
+
+interface SavePickerWindow extends Window {
+  showSaveFilePicker?: (options: { suggestedName: string }) => Promise<{
+    createWritable: () => Promise<{
+      write: (content: string) => Promise<void>;
+      close: () => Promise<void>;
+    }>;
+  }>;
 }
 
 function modeTitle(mode: OrchestrationMode) {

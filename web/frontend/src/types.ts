@@ -13,13 +13,14 @@ export interface RunRequest {
 
 export interface RunSnapshot {
   run_id: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "cancelling" | "cancelled" | "completed" | "failed";
   request: RunRequest;
   report_sections: Record<string, string>;
   complete_report: string | null;
   signal: string | null;
   error: string | null;
   metrics: Record<string, number>;
+  models: Record<string, string>;
   event_count: number;
 }
 
@@ -29,10 +30,29 @@ export interface NodeEvent {
   status: "running" | "completed";
   selected_action?: string;
   valid_actions?: string[];
+  produced_fields?: string[];
+  message?: string | null;
+  tool_calls?: Array<{ name: string; args: unknown }>;
 }
 
 export interface ReportEvent {
   section: string;
   title: string;
   content: string;
+}
+
+export interface WebSettings {
+  provider: "openrouter";
+  key_configured: boolean;
+  masked_key: string | null;
+  expert_model: string;
+  teacher_model: string;
+  scheduler_base_model: string;
+  scheduler_adapter: string | null;
+}
+
+export interface WebSettingsUpdate {
+  openrouter_api_key?: string;
+  expert_model: string;
+  teacher_model: string;
 }

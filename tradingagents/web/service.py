@@ -30,6 +30,12 @@ REPORT_FIELDS = {
     "final_trade_decision": "Portfolio Decision",
 }
 
+TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+
+
+class RunCancelled(RuntimeError):
+    pass
+
 ANALYST_REPORT_BY_NODE = {
     "Market Analyst": "market_report",
     "Sentiment Analyst": "sentiment_report",
@@ -55,6 +61,8 @@ class RunRecord:
     signal: str | None = None
     error: str | None = None
     metrics: dict[str, int] = field(default_factory=dict)
+    models: dict[str, str] = field(default_factory=dict)
+    cancel_requested: threading.Event = field(default_factory=threading.Event, repr=False)
     _condition: threading.Condition = field(
         default_factory=threading.Condition, repr=False
     )
@@ -73,7 +81,7 @@ class RunRecord:
 
     def wait_after(self, cursor: int, timeout: float = 15.0) -> list[dict[str, Any]]:
         with self._condition:
-            if len(self.events) <= cursor + 1 and self.status not in {"completed", "failed"}:
+            if len(self.events) <= cursor + 1 and self.status not in TERMINAL_STATUSES:
                 self._condition.wait(timeout)
             return [event for event in self.events if event["id"] > cursor]
 
@@ -89,6 +97,7 @@ class RunRecord:
             "signal": self.signal,
             "error": self.error,
             "metrics": dict(self.metrics),
+            "models": dict(self.models),
             "event_count": len(self.events),
         }
 
@@ -99,6 +108,8 @@ class GraphEventProjector:
         self._reports: dict[str, str] = {}
 
     def __call__(self, stream_mode: str, payload: object) -> None:
+        if self.record.cancel_requested.is_set():
+            raise RunCancelled("analysis cancelled by user")
         if stream_mode == "updates" and isinstance(payload, dict):
             self._project_nodes(payload)
         elif stream_mode == "values" and isinstance(payload, dict):
@@ -113,6 +124,7 @@ class GraphEventProjector:
                 "kind": _node_kind(node_name),
                 "status": _node_status(node_name, update),
             }
+            data.update(_node_details(update))
             if isinstance(update, dict) and update.get("scheduler_action"):
                 data["selected_action"] = update["scheduler_action"]
                 data["valid_actions"] = update.get("scheduler_valid_actions", [])
@@ -135,8 +147,10 @@ class RunManager:
     def __init__(
         self,
         graph_factory: Callable[..., TradingAgentsGraph] = TradingAgentsGraph,
+        settings_provider: Callable[[], dict[str, object]] | None = None,
     ):
         self.graph_factory = graph_factory
+        self.settings_provider = settings_provider or (lambda: {})
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web-run")
         self._lock = threading.Lock()
         self._runs: dict[str, RunRecord] = {}
@@ -156,18 +170,36 @@ class RunManager:
         except KeyError as exc:
             raise KeyError(f"unknown run: {run_id}") from exc
 
+    def cancel(self, run_id: str) -> RunRecord:
+        record = self.get(run_id)
+        if record.status in TERMINAL_STATUSES:
+            return record
+        record.status = "cancelling"
+        record.cancel_requested.set()
+        record.emit("run.cancelling", {"run_id": run_id})
+        return record
+
     def _execute(self, record: RunRecord) -> None:
         record.status = "running"
         record.emit("run.started", {"run_id": record.run_id})
         try:
             self._run_graph(record)
+        except RunCancelled:
+            record.status = "cancelled"
+            record.emit("run.cancelled", {"run_id": record.run_id})
         except Exception as exc:  # noqa: BLE001 - boundary converts failure to run state
             record.status = "failed"
             record.error = f"{type(exc).__name__}: {exc}"
             record.emit("run.failed", {"error": record.error})
 
     def _run_graph(self, record: RunRecord) -> None:
-        config, ticker, asset_type, analysts = _runtime_config(record.request)
+        config, ticker, asset_type, analysts = _runtime_config(
+            record.request,
+            self.settings_provider(),
+        )
+        record.models = _model_summary(config, record.request.orchestration_mode)
+        if record.cancel_requested.is_set():
+            raise RunCancelled("analysis cancelled before execution")
         cost_tracker = SchedulerCostCallback()
         graph = self.graph_factory(
             analysts,
@@ -201,6 +233,7 @@ class RunManager:
 
 def _runtime_config(
     request: CreateRunRequest,
+    overrides: dict[str, object] | None = None,
 ) -> tuple[dict[str, Any], str, str, tuple[str, ...]]:
     ticker = normalize_symbol(request.ticker)
     asset_type = "crypto" if ticker.endswith(CRYPTO_SUFFIXES) else "stock"
@@ -211,6 +244,7 @@ def _runtime_config(
     ):
         raise ValueError("local learned scheduler requires a configured adapter path")
     config = DEFAULT_CONFIG.copy()
+    config.update(overrides or {})
     rounds = DEPTH_ROUNDS[request.research_depth]
     config.update(
         {
@@ -223,6 +257,18 @@ def _runtime_config(
     )
     analysts = tuple(key for key in ANALYST_ORDER if key in request.analysts)
     return config, ticker, asset_type, analysts
+
+
+def _model_summary(config: dict[str, Any], mode: str) -> dict[str, str]:
+    scheduler = {
+        "static": "Static LangGraph",
+        "teacher": str(config.get("teacher_model") or "Teacher model"),
+        "learned": str(config.get("scheduler_base_model") or "Local scheduler"),
+    }[mode]
+    return {
+        "expert": str(config.get("quick_think_llm") or "Configured expert model"),
+        "scheduler": scheduler,
+    }
 
 
 def _node_kind(node_name: str) -> str:
@@ -240,6 +286,54 @@ def _node_status(node_name: str, update: object) -> str:
     return "completed"
 
 
+def _node_details(update: object) -> dict[str, object]:
+    if not isinstance(update, dict):
+        return {}
+    produced_fields = [key for key in REPORT_FIELDS if update.get(key)]
+    messages = update.get("messages") or []
+    message = _last_message(messages)
+    tool_calls = _tool_calls(messages)
+    return {
+        "produced_fields": produced_fields,
+        "message": message,
+        "tool_calls": tool_calls,
+    }
+
+
+def _last_message(messages: object) -> str | None:
+    if not isinstance(messages, (list, tuple)) or not messages:
+        return None
+    value = messages[-1]
+    content = value.get("content") if isinstance(value, dict) else getattr(value, "content", None)
+    if content is None:
+        return None
+    text = content if isinstance(content, str) else str(content)
+    return text[:6000]
+
+
+def _tool_calls(messages: object) -> list[dict[str, object]]:
+    if not isinstance(messages, (list, tuple)) or not messages:
+        return []
+    value = messages[-1]
+    calls = value.get("tool_calls", []) if isinstance(value, dict) else getattr(value, "tool_calls", [])
+    result = []
+    for call in calls or []:
+        name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
+        args = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
+        result.append({"name": str(name or "unknown"), "args": _safe_value(args)})
+    return result
+
+
+def _safe_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_safe_value(item) for item in value]
+    return str(value)
+
+
 def _report_sections(state: dict[str, Any]) -> dict[str, str]:
     reports = {
         key: str(state.get(key) or "")
@@ -248,10 +342,29 @@ def _report_sections(state: dict[str, Any]) -> dict[str, str]:
     }
     research = state.get("investment_debate_state") or {}
     reports["investment_plan"] = str(
-        state.get("investment_plan") or research.get("judge_decision") or ""
+        state.get("investment_plan")
+        or _joined_report(
+            ("Bull Researcher", research.get("bull_history")),
+            ("Bear Researcher", research.get("bear_history")),
+            ("Research Manager", research.get("judge_decision")),
+        )
     )
     risk = state.get("risk_debate_state") or {}
     reports["final_trade_decision"] = str(
-        state.get("final_trade_decision") or risk.get("judge_decision") or ""
+        state.get("final_trade_decision")
+        or _joined_report(
+            ("Aggressive Analyst", risk.get("aggressive_history")),
+            ("Conservative Analyst", risk.get("conservative_history")),
+            ("Neutral Analyst", risk.get("neutral_history")),
+            ("Portfolio Manager", risk.get("judge_decision")),
+        )
     )
     return reports
+
+
+def _joined_report(*parts: tuple[str, object]) -> str:
+    return "\n\n".join(
+        f"### {title}\n{content}"
+        for title, content in parts
+        if isinstance(content, str) and content.strip()
+    )

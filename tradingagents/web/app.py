@@ -10,17 +10,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .schemas import CreateRunRequest
+from .schemas import CreateRunRequest, WebSettingsUpdate
 from .service import RunManager
+from .settings import WebSettingsStore
 
 load_dotenv()
 
 app = FastAPI(title="TradingAgents RL Console", version="0.1.0")
-app.state.run_manager = RunManager()
+app.state.web_settings = WebSettingsStore()
+app.state.run_manager = RunManager(
+    settings_provider=app.state.web_settings.runtime_overrides
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["*"],
 )
 
@@ -28,6 +32,16 @@ app.add_middleware(
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/settings")
+def get_settings(request: Request) -> dict:
+    return request.app.state.web_settings.public()
+
+
+@app.put("/api/settings")
+def update_settings(payload: WebSettingsUpdate, request: Request) -> dict:
+    return request.app.state.web_settings.update(payload)
 
 
 @app.post("/api/runs", status_code=status.HTTP_202_ACCEPTED)
@@ -42,6 +56,14 @@ def create_run(payload: CreateRunRequest, request: Request) -> dict:
 def get_run(run_id: str, request: Request) -> dict:
     try:
         return request.app.state.run_manager.get(run_id).snapshot()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def cancel_run(run_id: str, request: Request) -> dict:
+    try:
+        return request.app.state.run_manager.cancel(run_id).snapshot()
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -69,7 +91,7 @@ def stream_events(run_id: str, request: Request) -> StreamingResponse:
                 cursor = event["id"]
                 payload = json.dumps(event["data"], ensure_ascii=False)
                 yield f"id: {cursor}\nevent: {event['type']}\ndata: {payload}\n\n"
-            if record.status in {"completed", "failed"} and cursor == len(record.events) - 1:
+            if record.status in {"completed", "failed", "cancelled"} and cursor == len(record.events) - 1:
                 return
 
     return StreamingResponse(generate(), media_type="text/event-stream")

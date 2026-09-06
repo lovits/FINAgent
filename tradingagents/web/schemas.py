@@ -39,3 +39,17 @@ class CreateRunRequest(BaseModel):
         if self.orchestration_mode == "learned" and self.research_depth != "shallow":
             raise ValueError("local learned scheduler only supports shallow research")
         return self
+
+
+class WebSettingsUpdate(BaseModel):
+    openrouter_api_key: str | None = Field(default=None, min_length=8, max_length=512)
+    expert_model: str = Field(min_length=3, max_length=160)
+    teacher_model: str = Field(min_length=3, max_length=160)
+
+    @field_validator("expert_model", "teacher_model")
+    @classmethod
+    def validate_model_id(cls, value: str) -> str:
+        model = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]+", model):
+            raise ValueError("model ID contains unsupported characters")
+        return model

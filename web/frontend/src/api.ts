@@ -1,4 +1,4 @@
-import type { RunRequest, RunSnapshot } from "./types";
+import type { RunRequest, RunSnapshot, WebSettings, WebSettingsUpdate } from "./types";
 
 async function responseJson<T>(response: Response): Promise<T> {
   const value = await response.json();
@@ -20,4 +20,23 @@ export async function createRun(payload: RunRequest): Promise<RunSnapshot> {
 export async function getRun(runId: string): Promise<RunSnapshot> {
   const response = await fetch(`/api/runs/${runId}`);
   return responseJson<RunSnapshot>(response);
+}
+
+export async function cancelRun(runId: string): Promise<RunSnapshot> {
+  const response = await fetch(`/api/runs/${runId}/cancel`, { method: "POST" });
+  return responseJson<RunSnapshot>(response);
+}
+
+export async function getSettings(): Promise<WebSettings> {
+  const response = await fetch("/api/settings");
+  return responseJson<WebSettings>(response);
+}
+
+export async function updateSettings(payload: WebSettingsUpdate): Promise<WebSettings> {
+  const response = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return responseJson<WebSettings>(response);
 }
