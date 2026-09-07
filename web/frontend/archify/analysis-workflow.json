@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "TradingAgents-RL 实时分析流程",
+    "title": "FIN Agents 实时分析流程",
     "locale": "zh-CN",
     "animation": "trace",
     "quality_profile": "showcase"
