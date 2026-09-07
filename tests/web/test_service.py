@@ -92,14 +92,14 @@ def test_run_manager_exposes_only_an_active_run() -> None:
     assert manager.active() is None
 
 
-def test_projector_hides_message_cleanup_nodes() -> None:
+def test_projector_hides_message_cleanup_and_tool_nodes() -> None:
     record = RunRecord("run", _request())
     projector = GraphEventProjector(record)
     projector("updates", {"Msg Clear Market": {}, "tools_market": {}})
-    assert [event["data"]["node"] for event in record.events] == ["tools_market"]
+    assert record.events == []
 
 
-def test_projector_keeps_cli_message_and_tool_details() -> None:
+def test_projector_keeps_agent_output_without_tool_request_details() -> None:
     record = RunRecord("run", _request())
     projector = GraphEventProjector(record)
     projector(
@@ -117,23 +117,33 @@ def test_projector_keeps_cli_message_and_tool_details() -> None:
     )
     data = record.events[0]["data"]
     assert data["message"] == "Checking price data"
-    assert data["tool_calls"] == [
-        {"name": "get_stock_data", "argument_keys": ["ticker"]}
-    ]
+    assert "tool_calls" not in data
 
 
-def test_projector_keeps_all_tool_results_and_live_usage() -> None:
+def test_projector_hides_tool_nodes_and_rolls_usage_into_agent_step() -> None:
     class CostTracker:
-        def snapshot(self) -> CostSnapshot:
-            return CostSnapshot(
-                llm_calls=1,
-                tool_calls=2,
-                input_tokens=120,
-                output_tokens=30,
+        def __init__(self):
+            self.snapshots = iter(
+                [
+                    CostSnapshot(llm_calls=1, input_tokens=50, output_tokens=10),
+                    CostSnapshot(
+                        llm_calls=2,
+                        tool_calls=2,
+                        input_tokens=120,
+                        output_tokens=30,
+                    ),
+                ]
             )
+
+        def snapshot(self) -> CostSnapshot:
+            return next(self.snapshots)
 
     record = RunRecord("run", _request())
     projector = GraphEventProjector(record, CostTracker())
+    projector(
+        "updates",
+        {"Market Analyst": {"messages": [{"content": "Fetching evidence"}]}},
+    )
     projector(
         "updates",
         {
@@ -155,16 +165,20 @@ def test_projector_keeps_all_tool_results_and_live_usage() -> None:
             }
         },
     )
+    assert len(record.events) == 1
 
-    data = record.events[0]["data"]
-    assert [message["name"] for message in data["messages"]] == [
-        "get_stock_data",
-        "get_indicators",
-    ]
-    assert data["messages"][0]["source"] == "BaoStock"
-    assert data["messages"][0]["summarized"] is True
-    assert "row1" not in data["messages"][0]["content"]
-    assert data["usage"]["input_tokens"] == 120
+    projector(
+        "updates",
+        {"Market Analyst": {"messages": [{"content": "Final market analysis"}]}},
+    )
+    data = record.events[-1]["data"]
+    assert data["message"] == "Final market analysis"
+    assert data["usage"] == {
+        "llm_calls": 1,
+        "tool_calls": 2,
+        "input_tokens": 70,
+        "output_tokens": 20,
+    }
     assert data["cumulative_metrics"]["output_tokens"] == 30
     assert record.metrics["tool_calls"] == 2
 

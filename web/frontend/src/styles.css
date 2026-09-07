@@ -186,6 +186,8 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .panel-title { min-height: 52px; justify-content: flex-start; padding: 0 16px; border-bottom: 1px solid var(--border); }
 .panel-title h3 { margin: 0; font-size: 13px; }
 .panel-title > span { margin-left: auto; color: var(--muted); font: 11px "Fira Code", monospace; }
+.panel-export-button { margin-left: auto; padding: 6px 9px; display: inline-flex; align-items: center; gap: 6px; color: #bbf7d0; background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.28); border-radius: 7px; font-size: 11px; cursor: pointer; }
+.panel-export-button:hover { color: #ecfdf5; border-color: #22c55e; background: rgba(34,197,94,.14); }
 .timeline { max-height: 690px; overflow: auto; padding: 12px; }
 .timeline-item { width: 100%; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 11px; min-height: 64px; margin-bottom: 8px; padding: 9px 11px; color: inherit; text-align: left; background: linear-gradient(135deg, rgba(23,32,51,.95), rgba(11,17,32,.9)); border: 1px solid var(--border); border-radius: 11px; cursor: pointer; transition: border-color .18s, transform .18s, background .18s; }
 .timeline-item:hover { border-color: #52647d; background: #172033; transform: translateX(2px); }
@@ -233,7 +235,7 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .node-drawer > header { min-height: 76px; padding: 0 20px; position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; background: rgba(8,16,31,.96); border-bottom: 1px solid var(--border); backdrop-filter: blur(12px); }
 .node-drawer > header h2 { font-size: 19px; }
 .node-drawer > header button { width: 40px; height: 40px; display: grid; place-items: center; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; cursor: pointer; }
-.drawer-usage { display: grid; grid-template-columns: repeat(4, 1fr); padding: 14px 20px; gap: 8px; border-bottom: 1px solid var(--border); }
+.drawer-usage { display: grid; grid-template-columns: repeat(3, 1fr); padding: 14px 20px; gap: 8px; border-bottom: 1px solid var(--border); }
 .drawer-usage > div { min-width: 0; padding: 11px 12px; background: var(--surface-2); border: 1px solid #26344a; border-radius: 9px; }
 .drawer-usage span, .drawer-usage strong { display: block; }
 .drawer-usage span { color: #7f8da3; font-size: 10px; }
@@ -247,7 +249,6 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .trace-card { min-width: 0; overflow: hidden; background: rgba(15,23,42,.72); border: 1px solid #293750; border-radius: 12px; }
 .trace-card.agent { border-left: 3px solid #22c55e; }
 .trace-card.scheduler { border-left: 3px solid #60a5fa; }
-.trace-card.tool { border-left: 3px solid #fbbf24; }
 .trace-card-header { min-height: 52px; padding: 9px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: rgba(17,24,39,.8); border-bottom: 1px solid rgba(51,65,85,.7); }
 .trace-card-header > div:first-child { min-width: 0; }
 .trace-card-header span, .trace-card-header small { display: block; color: #718096; font: 9px/1.4 "Fira Code", monospace; letter-spacing: .06em; }
@@ -260,26 +261,16 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .scheduler-detail code { min-width: 0; overflow-wrap: anywhere; color: #bfdbfe; }
 .scheduler-choice strong { color: #93c5fd; font: 600 11px "Fira Code", monospace; }
 .trace-subsection { padding: 10px 12px; border-bottom: 1px solid rgba(39,52,73,.55); }
-.trace-subsection h4, .tool-detail h4 { margin: 0 0 8px; color: #7f8da3; font-size: 10px; font-weight: 500; }
+.trace-subsection h4 { margin: 0 0 8px; color: #7f8da3; font-size: 10px; font-weight: 500; }
 .action-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .action-chips span { padding: 5px 7px; color: #bfdbfe; background: rgba(96,165,250,.1); border: 1px solid rgba(96,165,250,.25); border-radius: 6px; font: 9px "Fira Code", monospace; }
 .action-chips.history span { color: #c4b5fd; background: rgba(139,92,246,.09); border-color: rgba(139,92,246,.25); }
 .field-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .field-chips span { padding: 4px 7px; color: #a7f3d0; background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2); border-radius: 6px; font: 9px "Fira Code", monospace; }
-.tool-detail { margin: 10px 12px; padding: 11px; background: #111827; border: 1px solid #374151; border-radius: 9px; }
-.tool-detail.compact { display: grid; gap: 7px; }
-.tool-detail.compact span, .tool-detail.compact small { color: #94a3b8; font-size: 10px; }
-.tool-detail > div, .message-record > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.tool-detail strong { color: #fde68a; font: 11px "Fira Code", monospace; }
-.tool-detail code, .message-record code { color: #718096; font: 9px "Fira Code", monospace; overflow-wrap: anywhere; }
-.tool-detail h4 { margin-top: 10px; }
-.tool-detail pre { margin: 0; max-height: 320px; overflow: auto; color: #dbe4f0; font: 11px/1.58 "Fira Code", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-record { margin: 10px 12px 12px; padding: 12px; background: #0b1324; border: 1px solid #2c3a51; border-radius: 9px; }
+.message-record > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .message-record > div strong { color: #86efac; font-size: 11px; }
-.message-record.tool > div strong { color: #fde68a; }
-.message-record > div span { color: #cbd5e1; font: 10px "Fira Code", monospace; }
 .message-record pre { margin: 10px 0 0; max-height: 440px; overflow: auto; color: #dbe4f0; font: 11px/1.62 "Fira Code", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.message-record.summary-only p { margin: 10px 0 0; color: #dbe4f0; font: 11px/1.65 "Fira Code", monospace; white-space: pre-line; }
 .message-record > small { display: block; margin-top: 8px; color: #fcd34d; font-size: 10px; }
 .drawer-markdown { color: #dbe4f0; font-size: 13px; line-height: 1.65; }
 .drawer-empty { padding: 20px; color: var(--muted); }

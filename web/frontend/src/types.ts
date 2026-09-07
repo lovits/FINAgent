@@ -44,10 +44,6 @@ export interface TraceMessage {
   content: string;
   content_length: number;
   truncated: boolean;
-  name?: string;
-  tool_call_id?: string;
-  source?: string;
-  summarized?: boolean;
 }
 
 export interface NodeEvent {
@@ -59,7 +55,6 @@ export interface NodeEvent {
   produced_fields?: string[];
   message?: string | null;
   messages?: TraceMessage[];
-  tool_calls?: Array<{ id?: string; name: string; argument_keys?: string[] }>;
   timestamp_ms?: number;
   usage?: UsageMetrics;
   cumulative_metrics?: UsageMetrics;

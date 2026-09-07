@@ -16,7 +16,6 @@ import {
   Settings2,
   Sparkles,
   Square,
-  Wrench,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -175,9 +174,13 @@ export default function App() {
   const completedRunsRef = useRef<CompletedRun[]>([]);
 
   const isBusy = ["queued", "running", "cancelling"].includes(run?.status ?? "");
+  const visibleNodes = useMemo(
+    () => nodes.filter((node) => node.kind !== "tool"),
+    [nodes],
+  );
   const failedNode = run?.status === "failed" ? run.error_details?.node : undefined;
   const failedNodeIndex = failedNode
-    ? nodes.map((node) => node.node).lastIndexOf(failedNode)
+    ? visibleNodes.map((node) => node.node).lastIndexOf(failedNode)
     : -1;
   const visibleReports = useMemo(
     () => REPORT_ORDER.filter((key) => reports[key]),
@@ -374,17 +377,32 @@ export default function App() {
 
   async function exportReport() {
     if (!run?.complete_report) return;
+    await saveMarkdown(
+      run.complete_report,
+      `${run.request.ticker}_${run.request.analysis_date}_complete-report.md`,
+    );
+  }
+
+  async function exportStageReport() {
+    const content = reports[activeReport];
+    if (!run || !content) return;
+    await saveMarkdown(
+      content,
+      `${run.request.ticker}_${run.request.analysis_date}_${activeReport}.md`,
+    );
+  }
+
+  async function saveMarkdown(content: string, filename: string) {
     try {
-      const filename = `${run.request.ticker}_${run.request.analysis_date}_report.md`;
       const picker = (window as SavePickerWindow).showSaveFilePicker;
       if (picker) {
         const handle = await picker({ suggestedName: filename });
         const writable = await handle.createWritable();
-        await writable.write(run.complete_report);
+        await writable.write(content);
         await writable.close();
         return;
       }
-      const url = URL.createObjectURL(new Blob([run.complete_report], { type: "text/markdown" }));
+      const url = URL.createObjectURL(new Blob([content], { type: "text/markdown" }));
       const link = document.createElement("a");
       link.href = url;
       link.download = filename;
@@ -577,7 +595,7 @@ export default function App() {
 
               <ProcessGraph
                 analysts={run.request.analysts}
-                events={nodes}
+                events={visibleNodes}
                 mode={run.request.orchestration_mode}
                 finished={run.status === "completed"}
                 failedNode={failedNode}
@@ -586,16 +604,16 @@ export default function App() {
 
               <div className="execution-grid">
                 <aside className="timeline-panel" aria-label="Agent执行进度">
-                  <div className="panel-title"><Activity size={17} /><h3>执行进度</h3><span>{nodes.length}</span></div>
+                  <div className="panel-title"><Activity size={17} /><h3>执行进度</h3><span>{visibleNodes.length}</span></div>
                   <div className="timeline" aria-live="polite">
-                    {nodes.length === 0 && <div className="waiting"><span className="pulse" />正在初始化Agent图…</div>}
-                    {nodes.map((node, index) => <TimelineItem node={node} index={index} failed={index === failedNodeIndex} onSelect={setSelectedNode} key={`${index}-${node.node}`} />)}
-                    {isBusy && nodes.length > 0 && <div className="waiting"><span className="pulse" />等待下一节点…</div>}
+                    {visibleNodes.length === 0 && <div className="waiting"><span className="pulse" />正在初始化Agent图…</div>}
+                    {visibleNodes.map((node, index) => <TimelineItem node={node} index={index} failed={index === failedNodeIndex} onSelect={setSelectedNode} key={`${index}-${node.node}`} />)}
+                    {isBusy && visibleNodes.length > 0 && <div className="waiting"><span className="pulse" />等待下一节点…</div>}
                   </div>
                 </aside>
 
                 <article className="report-panel">
-                  <div className="panel-title"><FileText size={17} /><h3>分析报告</h3></div>
+                  <div className="panel-title"><FileText size={17} /><h3>分析报告</h3>{reports[activeReport] && <button className="panel-export-button" onClick={() => void exportStageReport()}><Download size={14} />导出当前阶段</button>}</div>
                   {visibleReports.length ? (
                     <>
                       <nav className="report-tabs" aria-label="报告章节">
@@ -614,7 +632,7 @@ export default function App() {
               {run.status === "completed" && <CompletionSummary run={run} onReset={reset} onExport={exportReport} />}
               {run.status === "failed" && <RunErrorPanel run={run} onReset={reset} />}
         </section>
-        {selectedNode && <NodeDetailDrawer node={selectedNode} events={nodes} reports={reports} onClose={() => setSelectedNode(null)} />}
+        {selectedNode && <NodeDetailDrawer node={selectedNode} events={visibleNodes} onClose={() => setSelectedNode(null)} />}
       </main>}
     </div>
   );
@@ -622,7 +640,7 @@ export default function App() {
 
 function TimelineItem({ node, index, failed, onSelect }: { node: NodeEvent; index: number; failed: boolean; onSelect: (node: string) => void }) {
   const isFailed = failed || node.status === "failed";
-  const Icon = isFailed ? X : node.kind === "tool" ? Wrench : node.kind === "scheduler" ? Bot : Check;
+  const Icon = isFailed ? X : node.kind === "scheduler" ? Bot : Check;
   const tokens = totalTokens(node.usage);
   return <button className={`timeline-item ${node.kind} ${isFailed ? "failed" : node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{isFailed && <span className="timeline-error">失败</span>}{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}{tokens > 0 && <span className="timeline-token">+{formatNumber(tokens)} TOK</span>}</span></button>;
 }
@@ -820,35 +838,6 @@ function SvgAgentNode({ x, y, name, state, tokens, wide = false, onSelect }: {
   </g>;
 }
 
-const NODE_REPORT: Record<string, string> = {
-  "Market Analyst": "market_report",
-  "Sentiment Analyst": "sentiment_report",
-  "News Analyst": "news_report",
-  "Fundamentals Analyst": "fundamentals_report",
-  "Bull Researcher": "investment_plan",
-  "Bear Researcher": "investment_plan",
-  "Research Manager": "investment_plan",
-  Trader: "trader_investment_plan",
-  "Aggressive Analyst": "final_trade_decision",
-  "Conservative Analyst": "final_trade_decision",
-  "Neutral Analyst": "final_trade_decision",
-  "Portfolio Manager": "final_trade_decision",
-};
-
-const AGENT_TOOL_NODE: Record<string, string> = {
-  "Market Analyst": "tools_market",
-  "Sentiment Analyst": "tools_social",
-  "News Analyst": "tools_news",
-  "Fundamentals Analyst": "tools_fundamentals",
-};
-
-function traceNodes(node: string): Set<string> {
-  const pair = Object.entries(AGENT_TOOL_NODE).find(
-    ([agent, tool]) => node === agent || node === tool,
-  );
-  return new Set(pair ?? [node]);
-}
-
 function usageForEvents(items: Array<{ event: NodeEvent }>): UsageMetrics {
   return items.reduce(
     (total, item) => ({
@@ -861,20 +850,15 @@ function usageForEvents(items: Array<{ event: NodeEvent }>): UsageMetrics {
   );
 }
 
-function NodeDetailDrawer({ node, events, reports, onClose }: {
+function NodeDetailDrawer({ node, events, onClose }: {
   node: string;
   events: NodeEvent[];
-  reports: Record<string, string>;
   onClose: () => void;
 }) {
-  const includedNodes = traceNodes(node);
   const occurrences = events
     .map((event, index) => ({ event, index }))
-    .filter((item) => includedNodes.has(item.event.node));
-  const latest = occurrences.filter((item) => item.event.node === node).at(-1)?.event
-    ?? occurrences.at(-1)?.event;
-  const reportKey = NODE_REPORT[node];
-  const report = reportKey ? reports[reportKey] : "";
+    .filter((item) => item.event.node === node);
+  const latest = occurrences.at(-1)?.event;
   const usage = usageForEvents(occurrences);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -886,8 +870,8 @@ function NodeDetailDrawer({ node, events, reports, onClose }: {
   return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <aside className="node-drawer" role="dialog" aria-modal="true" aria-labelledby="node-detail-title">
       <header><div><p className="step-label">NODE TRACE</p><h2 id="node-detail-title">{node}</h2></div><button onClick={onClose} aria-label="关闭节点详情"><X size={18} /></button></header>
-      <div className="drawer-usage" aria-label="节点资源消耗"><div><span>输入 Token</span><strong>{formatNumber(usage.input_tokens)}</strong></div><div><span>输出 Token</span><strong>{formatNumber(usage.output_tokens)}</strong></div><div className="drawer-usage-total"><span>总 Token</span><strong>{formatNumber(totalTokens(usage))}</strong></div><div><span>LLM / 工具</span><strong>{usage.llm_calls} / {usage.tool_calls}</strong></div></div>
-      <div className="drawer-section trace-section"><h3>轨迹采集 · {occurrences.length} 条</h3>{occurrences.map(({ event, index }) => {
+      <div className="drawer-usage" aria-label="节点Token消耗"><div><span>输入 Token</span><strong>{formatNumber(usage.input_tokens)}</strong></div><div><span>输出 Token</span><strong>{formatNumber(usage.output_tokens)}</strong></div><div className="drawer-usage-total"><span>总 Token</span><strong>{formatNumber(totalTokens(usage))}</strong></div></div>
+      <div className="drawer-section trace-section"><h3>Agent 输出 · {occurrences.length} 条</h3>{occurrences.map(({ event, index }) => {
         const records = event.messages?.length
           ? event.messages
           : event.message
@@ -895,19 +879,17 @@ function NodeDetailDrawer({ node, events, reports, onClose }: {
             : [];
         const eventTokens = totalTokens(event.usage);
         return <article className={`trace-card ${event.kind}`} key={index}>
-          <header className="trace-card-header"><div><span>STEP {String(index + 1).padStart(2, "0")}</span><strong>{event.node}</strong></div><div><small>{event.timestamp_ms ? new Date(event.timestamp_ms).toLocaleTimeString("zh-CN", { hour12: false }) : ""}</small><b>{event.status === "completed" ? "已完成" : "运行中"}</b></div></header>
-          <div className="trace-metrics"><span>{event.kind.toUpperCase()}</span>{eventTokens > 0 && <span>+{formatNumber(eventTokens)} Token</span>}{Boolean(event.usage?.llm_calls) && eventTokens === 0 && <span>Token 未上报</span>}{Boolean(event.usage?.tool_calls) && <span>{event.usage?.tool_calls} 次工具调用</span>}</div>
+          <header className="trace-card-header"><div><span>STEP {String(index + 1).padStart(2, "0")}</span><strong>{event.node}</strong></div><div><small>{event.timestamp_ms ? new Date(event.timestamp_ms).toLocaleTimeString("zh-CN", { hour12: false }) : ""}</small><b>{event.status === "completed" ? "已完成" : event.status === "failed" ? "失败" : "运行中"}</b></div></header>
+          <div className="trace-metrics"><span>{event.kind.toUpperCase()}</span>{eventTokens > 0 && <span>+{formatNumber(eventTokens)} Token</span>}{Boolean(event.usage?.llm_calls) && eventTokens === 0 && <span>Token 未上报</span>}</div>
           {event.policy_id && <div className="scheduler-detail"><span>策略</span><code>{event.policy_id}</code>{event.scheduler_step != null && <span>第 {event.scheduler_step} 次决策</span>}</div>}
           {event.selected_action && <div className="scheduler-choice"><span>选择动作</span><strong>{actionLabel(event.selected_action)}</strong></div>}
           {event.valid_actions?.length ? <div className="trace-subsection"><h4>合法动作</h4><div className="action-chips">{event.valid_actions.map((action) => <span key={action}>{actionLabel(action)}</span>)}</div></div> : null}
           {event.scheduler_history?.length ? <div className="trace-subsection"><h4>历史动作</h4><div className="action-chips history">{event.scheduler_history.map((action, actionIndex) => <span key={`${action}-${actionIndex}`}>{actionIndex + 1}. {actionLabel(action)}</span>)}</div></div> : null}
           {event.produced_fields?.length ? <div className="trace-subsection"><h4>产出字段</h4><div className="field-chips">{event.produced_fields.map((field) => <span key={field}>{field}</span>)}</div></div> : null}
-          {event.tool_calls?.map((tool, toolIndex) => <div className="tool-detail compact" key={`${tool.id ?? tool.name}-${toolIndex}`}><div><strong>{tool.name}</strong><span>已请求</span></div>{tool.argument_keys?.length ? <small>参数字段：{tool.argument_keys.join("、")}</small> : null}</div>)}
-          {records.map((message, messageIndex) => <div className={`message-record ${event.kind} ${message.summarized ? "summary-only" : ""}`} key={`${message.tool_call_id ?? messageIndex}`}><div><strong>{event.kind === "tool" ? "工具结果摘要" : event.kind === "scheduler" ? "调度输出" : "Agent 输出"}</strong>{message.name && <span>{message.name}</span>}{message.source && <span>来源：{message.source}</span>}</div>{message.summarized ? <p>{message.content}</p> : <pre>{message.content}</pre>}{message.truncated && <small>内容共 {formatNumber(message.content_length)} 字符，此处展示前 20,000 字符。</small>}</div>)}
+          {records.map((message, messageIndex) => <div className={`message-record ${event.kind}`} key={messageIndex}><div><strong>{event.kind === "scheduler" ? "调度输出" : "Agent 输出"}</strong></div><pre>{message.content}</pre>{message.truncated && <small>内容共 {formatNumber(message.content_length)} 字符，此处展示前 20,000 字符。</small>}</div>)}
         </article>;
       })}</div>
-      {report ? <div className="drawer-section"><h3>阶段报告</h3><div className="drawer-markdown"><ReactMarkdown>{report}</ReactMarkdown></div></div> : null}
-      {!latest && !report && <p className="drawer-empty">当前节点尚未产生可展示内容。</p>}
+      {!latest && <p className="drawer-empty">当前节点尚未产生可展示内容。</p>}
     </aside>
   </div>;
 }
@@ -926,7 +908,7 @@ function RunErrorPanel({ run, onReset }: { run: RunSnapshot; onReset: () => void
 }
 
 function CompletionSummary({ run, onReset, onExport }: { run: RunSnapshot; onReset: () => void; onExport: () => Promise<void> }) {
-  return <section className="completion-summary"><div><p className="step-label">03 / COMPLETE</p><h3>分析报告已完成</h3></div><dl><div><dt>最终信号</dt><dd>{run.signal ?? "已生成"}</dd></div><div><dt>LLM调用</dt><dd>{run.metrics.llm_calls ?? 0}</dd></div><div><dt>工具调用</dt><dd>{run.metrics.tool_calls ?? 0}</dd></div><div><dt>Token</dt><dd>{formatNumber(totalTokens(run.metrics))}</dd></div></dl><div className="completion-actions"><button className="secondary-button" onClick={() => void onExport()}><Download size={15} />导出报告</button><button className="secondary-button" onClick={onReset}>新建任务</button></div></section>;
+  return <section className="completion-summary"><div><p className="step-label">03 / COMPLETE</p><h3>分析报告已完成</h3></div><dl><div><dt>最终信号</dt><dd>{run.signal ?? "已生成"}</dd></div><div><dt>LLM调用</dt><dd>{run.metrics.llm_calls ?? 0}</dd></div><div><dt>工具调用</dt><dd>{run.metrics.tool_calls ?? 0}</dd></div><div><dt>Token</dt><dd>{formatNumber(totalTokens(run.metrics))}</dd></div></dl><div className="completion-actions"><button className="secondary-button" onClick={() => void onExport()}><Download size={15} />导出完整报告</button><button className="secondary-button" onClick={onReset}>新建任务</button></div></section>;
 }
 
 function statusLabel(status?: RunSnapshot["status"]) {

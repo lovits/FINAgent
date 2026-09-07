@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import threading
 import uuid
 from collections.abc import Callable
@@ -137,7 +136,7 @@ class GraphEventProjector:
         visible = [
             (node_name, update)
             for node_name, update in payload.items()
-            if not node_name.startswith("Msg Clear")
+            if not node_name.startswith("Msg Clear") and _node_kind(node_name) != "tool"
         ]
         if not visible:
             return
@@ -394,12 +393,10 @@ def _node_details(update: object) -> dict[str, object]:
     messages = update.get("messages") or []
     message_records = _message_records(messages)
     message = message_records[-1]["content"] if message_records else None
-    tool_calls = _tool_calls(messages)
     return {
         "produced_fields": produced_fields,
         "message": message,
         "messages": message_records,
-        "tool_calls": tool_calls,
     }
 
 
@@ -422,63 +419,17 @@ def _message_records(messages: object) -> list[dict[str, object]]:
             else getattr(value, "type", type(value).__name__)
         )
         is_tool_message = str(message_type).lower() == "tool"
-        display_text = _tool_result_summary(text) if is_tool_message else text[:TRACE_CONTENT_LIMIT]
+        if is_tool_message:
+            continue
+        display_text = text[:TRACE_CONTENT_LIMIT]
         record: dict[str, object] = {
             "type": str(message_type or type(value).__name__),
             "content": display_text,
             "content_length": len(text),
-            "truncated": not is_tool_message and len(text) > TRACE_CONTENT_LIMIT,
+            "truncated": len(text) > TRACE_CONTENT_LIMIT,
         }
-        if is_tool_message:
-            record["summarized"] = True
-            source = _tool_result_source(text)
-            if source:
-                record["source"] = source
-        for key in ("name", "tool_call_id"):
-            item = value.get(key) if isinstance(value, dict) else getattr(value, key, None)
-            if item:
-                record[key] = str(item)
         result.append(record)
     return result
-
-
-def _tool_calls(messages: object) -> list[dict[str, object]]:
-    if not isinstance(messages, (list, tuple)) or not messages:
-        return []
-    value = messages[-1]
-    calls = value.get("tool_calls", []) if isinstance(value, dict) else getattr(value, "tool_calls", [])
-    result = []
-    for call in calls or []:
-        name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
-        args = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
-        identifier = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
-        safe_args = _safe_value(args)
-        argument_keys = sorted(safe_args) if isinstance(safe_args, dict) else []
-        item = {"name": str(name or "unknown"), "argument_keys": argument_keys}
-        if identifier:
-            item["id"] = str(identifier)
-        result.append(item)
-    return result
-
-
-def _tool_result_summary(text: str) -> str:
-    """Compact a potentially huge tool payload into source/result metadata."""
-
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        return "工具已完成，但没有返回正文。"
-    selected = [lines[0]]
-    for pattern in (r"^#?\s*Source:", r"^#?\s*Total records:", r"^DATA_UNAVAILABLE", r"^NO_DATA_AVAILABLE"):
-        match = next((line for line in lines if re.search(pattern, line, re.IGNORECASE)), None)
-        if match and match not in selected:
-            selected.append(match)
-    selected.append(f"原始返回共 {len(text):,} 个字符，界面已省略明细。")
-    return "\n".join(selected)
-
-
-def _tool_result_source(text: str) -> str | None:
-    match = re.search(r"^#?\s*Source:\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
-    return match.group(1).strip() if match else None
 
 
 def _data_source_summary(ticker: str) -> dict[str, str]:
@@ -513,18 +464,6 @@ def _error_details(exc: Exception, active_node: str | None) -> dict[str, str]:
         "message": message,
         "suggestion": suggestion,
     }
-
-
-def _safe_value(value: object) -> object:
-    """Convert tool metadata to JSON-safe primitives before exposing its keys."""
-
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _safe_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_safe_value(item) for item in value]
-    return str(value)
 
 
 def _empty_metrics() -> dict[str, int]:
