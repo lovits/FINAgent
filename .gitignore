@@ -224,13 +224,16 @@ __marimo__/
 .env.enterprise
 reports/
 
-# Scheduler training artifacts (task definitions and config fixtures remain trackable)
+# Machine-local Scheduler data, reports, evaluation inputs, and model outputs
 artifacts/scheduler/
-data/scheduler/v1/static/
-data/scheduler/v1/teacher/
-data/scheduler/v1/paired/
-data/scheduler/v1/sft/
-data/scheduler/v1/features.jsonl
+data/scheduler/
+configs/scheduler/teacher/v1/*.jsonl
+docs/sft-grpo-five-stage-evaluation-report.md
+docs/training-data-release.md
+scripts/build_training_evaluation_report.py
+scripts/compare_rl3_cpu_trial.py
+scripts/run_bkng_three_way.py
+scripts/run_rl3_cpu_trial.py
 
 # Machine-local indexes, independent tools, and generated trajectory batches
 .DS_Store
@@ -238,11 +241,6 @@ data/scheduler/v1/features.jsonl
 .ua/
 codegraph.json
 cockpit-tools/
-data/scheduler/v1/experiments/
-data/scheduler/v1/sft100/
-data/scheduler/v1/sft164/
-data/scheduler/v1/sft200/
-data/scheduler/v1/validation-partial/
 *.safetensors
 *.pt
 .env.*

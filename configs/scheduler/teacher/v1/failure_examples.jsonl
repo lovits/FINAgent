@@ -1,2 +1,0 @@
-{"error":"investment_plan_missing","invalid_output":{"action":"<ACT_TRADER>"},"lesson":"Choose only from VALID_ACTIONS."}
-{"error":"scheduler_must_not_call_tools","invalid_output":"Call get_stock_data first","lesson":"Return exactly one Expert Agent action."}
