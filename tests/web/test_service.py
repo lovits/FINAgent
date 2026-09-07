@@ -78,6 +78,18 @@ def test_run_manager_streams_nodes_reports_and_completion(tmp_path, monkeypatch)
     ]
 
 
+def test_run_manager_exposes_only_an_active_run() -> None:
+    manager = RunManager(graph_factory=FakeGraph)
+    assert manager.active() is None
+
+    queued = RunRecord("queued", _request(), status="queued")
+    manager._runs[queued.run_id] = queued
+    assert manager.active() is queued
+
+    queued.status = "completed"
+    assert manager.active() is None
+
+
 def test_projector_hides_message_cleanup_nodes() -> None:
     record = RunRecord("run", _request())
     projector = GraphEventProjector(record)

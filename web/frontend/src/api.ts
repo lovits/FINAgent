@@ -22,6 +22,11 @@ export async function getRun(runId: string): Promise<RunSnapshot> {
   return responseJson<RunSnapshot>(response);
 }
 
+export async function getActiveRun(): Promise<RunSnapshot | null> {
+  const response = await fetch("/api/runs/active");
+  return responseJson<RunSnapshot | null>(response);
+}
+
 export async function cancelRun(runId: string): Promise<RunSnapshot> {
   const response = await fetch(`/api/runs/${runId}/cancel`, { method: "POST" });
   return responseJson<RunSnapshot>(response);

@@ -237,6 +237,17 @@ class RunManager:
         except KeyError as exc:
             raise KeyError(f"unknown run: {run_id}") from exc
 
+    def active(self) -> RunRecord | None:
+        with self._lock:
+            return next(
+                (
+                    run
+                    for run in self._runs.values()
+                    if run.status in {"queued", "running", "cancelling"}
+                ),
+                None,
+            )
+
     def cancel(self, run_id: str) -> RunRecord:
         record = self.get(run_id)
         if record.status in TERMINAL_STATUSES:

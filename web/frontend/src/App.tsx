@@ -22,7 +22,7 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
-import { cancelRun, createRun, getRun, getSettings, updateSettings } from "./api";
+import { cancelRun, createRun, getActiveRun, getRun, getSettings, updateSettings } from "./api";
 import type {
   Analyst,
   NodeEvent,
@@ -198,6 +198,21 @@ export default function App() {
         setTeacherModel(value.teacher_model);
       })
       .catch(() => setSettingsMessage("无法读取本地模型设置。"));
+    void getActiveRun()
+      .then((activeRun) => {
+        if (!activeRun) return;
+        const restoredReports = { ...activeRun.report_sections };
+        nodesRef.current = [];
+        reportsRef.current = restoredReports;
+        setForm(activeRun.request);
+        setRun(activeRun);
+        setNodes([]);
+        setReports(restoredReports);
+        const first = REPORT_ORDER.find((key) => restoredReports[key]);
+        if (first) setActiveReport(first);
+        connectEvents(activeRun.run_id);
+      })
+      .catch(() => setFormError("无法恢复后台分析任务，请刷新页面重试。"));
     return () => eventSourceRef.current?.close();
   }, []);
 

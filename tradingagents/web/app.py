@@ -52,6 +52,12 @@ def create_run(payload: CreateRunRequest, request: Request) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@app.get("/api/runs/active")
+def get_active_run(request: Request) -> dict | None:
+    record = request.app.state.run_manager.active()
+    return record.snapshot() if record else None
+
+
 @app.get("/api/runs/{run_id}")
 def get_run(run_id: str, request: Request) -> dict:
     try:
