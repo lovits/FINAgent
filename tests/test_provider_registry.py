@@ -2,7 +2,10 @@
 family; this guards each provider's resolved config (base URL, subclass, auth,
 Responses API) so a future edit can't silently break one.
 """
+import json
+
 import pytest
+from langchain_core.messages import AIMessage
 
 from tradingagents.llm_clients.openai_client import (
     OPENAI_COMPATIBLE_PROVIDERS,
@@ -57,3 +60,22 @@ def test_key_optionality():
     assert OPENAI_COMPATIBLE_PROVIDERS["xai"].key_optional is False
     # OLLAMA_BASE_URL is the only base-URL env override.
     assert OPENAI_COMPATIBLE_PROVIDERS["ollama"].base_url_env == "OLLAMA_BASE_URL"
+
+
+@pytest.mark.unit
+def test_normalized_client_retries_one_malformed_gateway_response(monkeypatch):
+    calls = []
+
+    def invoke(_self, input, config=None, **kwargs):
+        calls.append(input)
+        if len(calls) == 1:
+            raise json.JSONDecodeError("truncated", "{", 1)
+        return AIMessage(content="recovered")
+
+    monkeypatch.setattr("langchain_openai.ChatOpenAI.invoke", invoke)
+    client = NormalizedChatOpenAI(model="test-model", api_key="placeholder")
+
+    result = client.invoke("prompt")
+
+    assert result.content == "recovered"
+    assert calls == ["prompt", "prompt"]

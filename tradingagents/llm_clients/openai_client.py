@@ -1,3 +1,5 @@
+import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -11,6 +13,8 @@ from .api_key_env import get_api_key_env
 from .base_client import BaseLLMClient, normalize_content
 from .capabilities import get_capabilities
 from .validators import validate_model
+
+logger = logging.getLogger(__name__)
 
 
 class NormalizedChatOpenAI(ChatOpenAI):
@@ -33,7 +37,17 @@ class NormalizedChatOpenAI(ChatOpenAI):
     """
 
     def invoke(self, input, config=None, **kwargs):
-        return normalize_content(super().invoke(input, config, **kwargs))
+        try:
+            return normalize_content(super().invoke(input, config, **kwargs))
+        except json.JSONDecodeError as exc:
+            # Some OpenAI-compatible gateways occasionally close a successful
+            # HTTP response with a truncated JSON body. The SDK does not classify
+            # that parse error as retryable, so repeat the same idempotent model
+            # invocation once before surfacing a node-level failure.
+            logger.warning(
+                "Model gateway returned malformed JSON; retrying once: %s", exc
+            )
+            return normalize_content(super().invoke(input, config, **kwargs))
 
     def with_structured_output(self, schema, *, method=None, **kwargs):
         caps = get_capabilities(self.model_name)
