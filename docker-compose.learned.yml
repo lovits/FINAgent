@@ -1,0 +1,25 @@
+services:
+  finagents-learned:
+    image: finagents:rl3
+    build:
+      context: .
+      dockerfile: Dockerfile.learned
+      additional_contexts:
+        qwen_model: ${FINAGENTS_QWEN_MODEL_CONTEXT:-./dist/autodl-scheduler/models/Qwen3-1.7B}
+        rl3_adapter: ${FINAGENTS_RL3_ADAPTER_CONTEXT:-./artifacts/scheduler/qwen3-1p7b/grpo-three-rounds-20260905/round-3/checkpoint}
+    env_file:
+      - .env
+    environment:
+      TRADINGAGENTS_ORCHESTRATION_MODE: learned
+      TRADINGAGENTS_SCHEDULER_BASE_MODEL: /opt/models/Qwen3-1.7B
+      TRADINGAGENTS_SCHEDULER_ADAPTER_PATH: /opt/models/RL3
+      TRADINGAGENTS_OUTPUT_LANGUAGE: Chinese
+    ports:
+      - "127.0.0.1:${FINAGENTS_PORT:-8000}:8000"
+    volumes:
+      - finagents_learned_data:/home/appuser/.tradingagents
+    init: true
+    shm_size: "2gb"
+
+volumes:
+  finagents_learned_data:

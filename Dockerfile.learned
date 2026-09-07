@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1.7
+
+ARG RUNTIME_IMAGE=python:3.12-slim
+ARG INSTALL_CPU_TORCH=1
+
+FROM node:22-slim AS frontend
+
+WORKDIR /frontend
+COPY web/frontend/package.json web/frontend/package-lock.json ./
+RUN npm ci
+COPY web/frontend/ ./
+RUN npm run build
+
+
+FROM ${RUNTIME_IMAGE} AS runtime
+
+ARG INSTALL_CPU_TORCH
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    TRADINGAGENTS_ORCHESTRATION_MODE=learned \
+    TRADINGAGENTS_SCHEDULER_BASE_MODEL=/opt/models/Qwen3-1.7B \
+    TRADINGAGENTS_SCHEDULER_ADAPTER_PATH=/opt/models/RL3 \
+    TRADINGAGENTS_OUTPUT_LANGUAGE=Chinese
+
+WORKDIR /opt/finagents
+
+COPY pyproject.toml README.md ./
+COPY tradingagents/ ./tradingagents/
+COPY training/ ./training/
+COPY cli/ ./cli/
+COPY configs/ ./configs/
+
+RUN if [ "$INSTALL_CPU_TORCH" = "1" ]; then \
+      pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0; \
+    fi \
+ && pip install --no-cache-dir ".[web,scheduler-train]" \
+ && groupadd --gid 10001 appuser \
+ && useradd --uid 10001 --gid 10001 --create-home appuser \
+ && install -d -m 0755 -o appuser -g appuser /home/appuser/.tradingagents
+
+COPY --from=frontend /frontend/dist/ ./web/frontend/dist/
+
+# These sources are supplied with docker build --build-context. They are copied
+# into the image, not bind-mounted at runtime and not committed to Git.
+COPY --from=qwen_model --chown=10001:10001 / /opt/models/Qwen3-1.7B/
+COPY --from=rl3_adapter --chown=10001:10001 \
+    /adapter_config.json \
+    /adapter_model.safetensors \
+    /chat_template.jinja \
+    /tokenizer.json \
+    /tokenizer_config.json \
+    /opt/models/RL3/
+
+RUN test -f /opt/models/Qwen3-1.7B/model.safetensors.index.json \
+ && test -f /opt/models/Qwen3-1.7B/model-00001-of-00002.safetensors \
+ && test -f /opt/models/Qwen3-1.7B/model-00002-of-00002.safetensors \
+ && test -f /opt/models/RL3/adapter_config.json \
+ && test -f /opt/models/RL3/adapter_model.safetensors \
+ && python -c "from transformers import AutoConfig; AutoConfig.from_pretrained('/opt/models/Qwen3-1.7B', local_files_only=True)" \
+ && python -c "from peft import PeftConfig; PeftConfig.from_pretrained('/opt/models/RL3')"
+
+USER appuser
+VOLUME ["/home/appuser/.tradingagents"]
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)" || exit 1
+
+ENTRYPOINT ["uvicorn", "tradingagents.web.app:app", "--host", "0.0.0.0", "--port", "8000"]

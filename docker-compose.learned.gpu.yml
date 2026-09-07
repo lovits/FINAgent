@@ -1,0 +1,8 @@
+services:
+  finagents-learned:
+    platform: linux/amd64
+    build:
+      args:
+        RUNTIME_IMAGE: pytorch/pytorch:2.8.0-cuda12.9-cudnn9-runtime
+        INSTALL_CPU_TORCH: "0"
+    gpus: all
