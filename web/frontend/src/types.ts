@@ -19,8 +19,16 @@ export interface RunSnapshot {
   complete_report: string | null;
   signal: string | null;
   error: string | null;
+  error_details: {
+    node?: string;
+    type?: string;
+    message?: string;
+    suggestion?: string;
+  };
   metrics: Record<string, number>;
   models: Record<string, string>;
+  resolved_ticker: string | null;
+  data_sources: Record<string, string>;
   event_count: number;
 }
 
@@ -38,6 +46,8 @@ export interface TraceMessage {
   truncated: boolean;
   name?: string;
   tool_call_id?: string;
+  source?: string;
+  summarized?: boolean;
 }
 
 export interface NodeEvent {
@@ -49,7 +59,7 @@ export interface NodeEvent {
   produced_fields?: string[];
   message?: string | null;
   messages?: TraceMessage[];
-  tool_calls?: Array<{ id?: string; name: string; args: unknown }>;
+  tool_calls?: Array<{ id?: string; name: string; argument_keys?: string[] }>;
   timestamp_ms?: number;
   usage?: UsageMetrics;
   cumulative_metrics?: UsageMetrics;

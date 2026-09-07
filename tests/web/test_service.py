@@ -17,12 +17,13 @@ from tradingagents.web.service import (
 
 
 def _request(**overrides) -> CreateRunRequest:
-    return CreateRunRequest(
-        ticker="NVDA",
-        analysis_date=date(2026, 8, 20),
-        analysts=["market"],
+    values = {
+        "ticker": "NVDA",
+        "analysis_date": date(2026, 8, 20),
+        "analysts": ["market"],
         **overrides,
-    )
+    }
+    return CreateRunRequest(**values)
 
 
 class FakeGraph:
@@ -84,7 +85,7 @@ def test_projector_hides_message_cleanup_nodes() -> None:
     assert [event["data"]["node"] for event in record.events] == ["tools_market"]
 
 
-def test_projector_keeps_cli_message_and_tool_details() -> None:
+def test_projector_keeps_cli_message_and_compacts_tool_request() -> None:
     record = RunRecord("run", _request())
     projector = GraphEventProjector(record)
     projector(
@@ -103,7 +104,7 @@ def test_projector_keeps_cli_message_and_tool_details() -> None:
     data = record.events[0]["data"]
     assert data["message"] == "Checking price data"
     assert data["tool_calls"] == [
-        {"name": "get_stock_data", "args": {"ticker": "NVDA"}}
+        {"name": "get_stock_data", "argument_keys": ["ticker"]}
     ]
 
 
@@ -128,7 +129,7 @@ def test_projector_keeps_all_tool_results_and_live_usage() -> None:
                         "type": "tool",
                         "name": "get_stock_data",
                         "tool_call_id": "call-1",
-                        "content": "price rows",
+                        "content": "# Price rows\n# Source: BaoStock\n# Total records: 250\nrow1\nrow2",
                     },
                     {
                         "type": "tool",
@@ -146,6 +147,9 @@ def test_projector_keeps_all_tool_results_and_live_usage() -> None:
         "get_stock_data",
         "get_indicators",
     ]
+    assert data["messages"][0]["source"] == "BaoStock"
+    assert data["messages"][0]["summarized"] is True
+    assert "row1" not in data["messages"][0]["content"]
     assert data["usage"]["input_tokens"] == 120
     assert data["cumulative_metrics"]["output_tokens"] == 30
     assert record.metrics["tool_calls"] == 2
@@ -217,3 +221,46 @@ def test_web_retry_always_starts_without_langgraph_checkpoint(monkeypatch) -> No
     )
     config, *_ = _runtime_config(_request())
     assert config["checkpoint_enabled"] is False
+
+
+def test_web_english_alias_resolves_to_mainland_sources(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "tradingagents.web.service.DEFAULT_CONFIG",
+        {"results_dir": str(tmp_path), "scheduler_adapter_path": None},
+    )
+    manager = RunManager(graph_factory=FakeGraph)
+    record = manager.create(_request(ticker="MOUTAI"))
+    deadline = monotonic() + 2
+    while record.status not in {"completed", "failed"} and monotonic() < deadline:
+        record.wait_after(len(record.events) - 1, timeout=0.05)
+
+    snapshot = record.snapshot()
+    assert snapshot["resolved_ticker"] == "600519.SS"
+    assert snapshot["data_sources"] == {
+        "market": "BaoStock",
+        "fundamentals": "BaoStock",
+        "news": "AKShare / Eastmoney",
+    }
+
+
+def test_failed_run_exposes_node_type_message_and_recovery(tmp_path, monkeypatch) -> None:
+    class FailingGraph(FakeGraph):
+        def propagate(self, ticker, trade_date, *, asset_type, on_graph_event):
+            on_graph_event("updates", {"Market Analyst": {}})
+            raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(
+        "tradingagents.web.service.DEFAULT_CONFIG",
+        {"results_dir": str(tmp_path), "scheduler_adapter_path": None},
+    )
+    manager = RunManager(graph_factory=FailingGraph)
+    record = manager.create(_request(ticker="MOUTAI"))
+    deadline = monotonic() + 2
+    while record.status not in {"completed", "failed"} and monotonic() < deadline:
+        record.wait_after(len(record.events) - 1, timeout=0.05)
+
+    assert record.status == "failed"
+    assert record.error_details["node"] == "Market Analyst"
+    assert record.error_details["type"] == "RuntimeError"
+    assert record.error_details["message"] == "provider unavailable"
+    assert record.error_details["suggestion"]

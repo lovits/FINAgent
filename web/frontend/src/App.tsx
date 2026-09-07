@@ -101,7 +101,7 @@ function today(): string {
 }
 
 const INITIAL_FORM: RunRequest = {
-  ticker: "600519",
+  ticker: "MOUTAI",
   analysis_date: today(),
   output_language: "Chinese",
   analysts: ["market", "social", "news", "fundamentals"],
@@ -110,10 +110,11 @@ const INITIAL_FORM: RunRequest = {
 };
 
 function isAShareInput(value: string): boolean {
+  const aliases = new Set(["MOUTAI", "KWEICHOWMOUTAI", "PINGAN", "CATL", "BYD"]);
   return value
     .split(/[,，\s]+/)
     .filter(Boolean)
-    .every((ticker) => /^\d{6}(\.(SS|SH|SZ))?$/i.test(ticker));
+    .every((ticker) => aliases.has(ticker.toUpperCase()) || /^\d{6}(\.(SS|SH|SZ))?$/i.test(ticker));
 }
 
 const EMPTY_USAGE: UsageMetrics = {
@@ -405,11 +406,11 @@ export default function App() {
                 <input
                   value={form.ticker}
                   onChange={(event) => setForm({ ...form, ticker: event.target.value.toUpperCase() })}
-                  placeholder="例如 600519, 000001, 300750"
+                  placeholder="例如 MOUTAI, PINGAN, CATL, BYD"
                   disabled={isBusy}
                   required
                 />
-                <small className="source-hint">默认A股路线：BaoStock行情与财务 · AKShare/东方财富新闻</small>
+                <small className="source-hint">英文别名会解析为A股代码：MOUTAI、PINGAN、CATL、BYD</small>
               </label>
               <label className="field">
                 <span>分析日期</span>
@@ -541,7 +542,8 @@ export default function App() {
                 <div className="run-meta">
                   {batchTotal > 1 && <span>{Math.min(completedRuns.length + 1, batchTotal)} / {batchTotal}</span>}
                   <span>{modeTitle(run.request.orchestration_mode)}</span><span>{run.request.analysis_date}</span>
-                  {isAShareInput(run.request.ticker) && <span>数据：BaoStock + AKShare</span>}
+                  {run.resolved_ticker && run.resolved_ticker !== run.request.ticker && <span>解析：{run.resolved_ticker}</span>}
+                  {(Object.values(run.data_sources ?? {}).length > 0 || isAShareInput(run.request.ticker)) && <span>数据：{Object.values(run.data_sources ?? {}).filter((value, index, values) => values.indexOf(value) === index).join(" + ") || "BaoStock + AKShare / Eastmoney"}</span>}
                   <span>专家：{run.models.expert ?? expertModel}</span><span>调度：{run.models.scheduler ?? "初始化中"}</span>
                 </div>
               </div>
@@ -590,7 +592,7 @@ export default function App() {
               </div>
 
               {run.status === "completed" && <CompletionSummary run={run} onReset={reset} onExport={exportReport} />}
-              {run.status === "failed" && <div className="run-error" role="alert"><strong>任务未完成</strong><p>{run.error}</p><button onClick={reset}>重新创建任务</button></div>}
+              {run.status === "failed" && <RunErrorPanel run={run} onReset={reset} />}
         </section>
         {selectedNode && <NodeDetailDrawer node={selectedNode} events={nodes} reports={reports} onClose={() => setSelectedNode(null)} />}
       </main>}
@@ -875,14 +877,27 @@ function NodeDetailDrawer({ node, events, reports, onClose }: {
           {event.valid_actions?.length ? <div className="trace-subsection"><h4>合法动作</h4><div className="action-chips">{event.valid_actions.map((action) => <span key={action}>{actionLabel(action)}</span>)}</div></div> : null}
           {event.scheduler_history?.length ? <div className="trace-subsection"><h4>历史动作</h4><div className="action-chips history">{event.scheduler_history.map((action, actionIndex) => <span key={`${action}-${actionIndex}`}>{actionIndex + 1}. {actionLabel(action)}</span>)}</div></div> : null}
           {event.produced_fields?.length ? <div className="trace-subsection"><h4>产出字段</h4><div className="field-chips">{event.produced_fields.map((field) => <span key={field}>{field}</span>)}</div></div> : null}
-          {event.tool_calls?.map((tool, toolIndex) => <div className="tool-detail" key={`${tool.id ?? tool.name}-${toolIndex}`}><div><strong>{tool.name}</strong>{tool.id && <code>{tool.id}</code>}</div><h4>调用参数</h4><pre>{JSON.stringify(tool.args, null, 2)}</pre></div>)}
-          {records.map((message, messageIndex) => <div className={`message-record ${event.kind}`} key={`${message.tool_call_id ?? messageIndex}`}><div><strong>{event.kind === "tool" ? "工具返回" : event.kind === "scheduler" ? "调度输出" : "Agent 输出"}</strong>{message.name && <span>{message.name}</span>}{message.tool_call_id && <code>{message.tool_call_id}</code>}</div><pre>{message.content}</pre>{message.truncated && <small>内容共 {formatNumber(message.content_length)} 字符，此处展示前 20,000 字符。</small>}</div>)}
+          {event.tool_calls?.map((tool, toolIndex) => <div className="tool-detail compact" key={`${tool.id ?? tool.name}-${toolIndex}`}><div><strong>{tool.name}</strong><span>已请求</span></div>{tool.argument_keys?.length ? <small>参数字段：{tool.argument_keys.join("、")}</small> : null}</div>)}
+          {records.map((message, messageIndex) => <div className={`message-record ${event.kind} ${message.summarized ? "summary-only" : ""}`} key={`${message.tool_call_id ?? messageIndex}`}><div><strong>{event.kind === "tool" ? "工具结果摘要" : event.kind === "scheduler" ? "调度输出" : "Agent 输出"}</strong>{message.name && <span>{message.name}</span>}{message.source && <span>来源：{message.source}</span>}</div>{message.summarized ? <p>{message.content}</p> : <pre>{message.content}</pre>}{message.truncated && <small>内容共 {formatNumber(message.content_length)} 字符，此处展示前 20,000 字符。</small>}</div>)}
         </article>;
       })}</div>
       {report ? <div className="drawer-section"><h3>阶段报告</h3><div className="drawer-markdown"><ReactMarkdown>{report}</ReactMarkdown></div></div> : null}
       {!latest && !report && <p className="drawer-empty">当前节点尚未产生可展示内容。</p>}
     </aside>
   </div>;
+}
+
+function RunErrorPanel({ run, onReset }: { run: RunSnapshot; onReset: () => void }) {
+  const details = run.error_details ?? {};
+  return <section className="run-error" role="alert">
+    <div className="run-error-heading"><strong>任务未完成</strong><span>{details.type ?? "运行错误"}</span></div>
+    <dl>
+      <div><dt>失败节点</dt><dd>{details.node ?? "未确定"}</dd></div>
+      <div><dt>错误原因</dt><dd>{details.message ?? run.error ?? "未返回错误信息"}</dd></div>
+      <div><dt>处理建议</dt><dd>{details.suggestion ?? "请重新创建任务。"}</dd></div>
+    </dl>
+    <button onClick={onReset}>重新创建任务</button>
+  </section>;
 }
 
 function CompletionSummary({ run, onReset, onExport }: { run: RunSnapshot; onReset: () => void; onExport: () => Promise<void> }) {

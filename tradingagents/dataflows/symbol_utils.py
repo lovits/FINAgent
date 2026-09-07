@@ -75,6 +75,17 @@ _YAHOO_SAFE = re.compile(r"^[A-Za-z0-9._\-\^=]+$")
 _SHANGHAI_PREFIXES = ("600", "601", "603", "605", "688", "689")
 _SHENZHEN_PREFIXES = ("000", "001", "002", "003", "300", "301")
 
+# Human-friendly English aliases for the small A-share demo universe exposed by
+# the Web console. They resolve locally and deterministically before vendor
+# routing; arbitrary US ticker symbols must never be guessed as A-shares.
+_A_SHARE_ALIASES = {
+    "MOUTAI": "600519.SS",
+    "KWEICHOWMOUTAI": "600519.SS",
+    "PINGAN": "000001.SZ",
+    "CATL": "300750.SZ",
+    "BYD": "002594.SZ",
+}
+
 
 # Crypto quote currencies that all map to Yahoo's USD pair. Yahoo lists only
 # ``<BASE>-USD`` (not the USDT/USDC stablecoin pairs), so a broker symbol quoted
@@ -105,6 +116,8 @@ def _normalize_crypto(s: str) -> str | None:
 
 
 def _normalize_a_share(s: str) -> str | None:
+    if s in _A_SHARE_ALIASES:
+        return _A_SHARE_ALIASES[s]
     if s.endswith(".SH"):
         return f"{s[:-3]}.SS"
     if s.endswith((".SS", ".SZ")):
@@ -163,7 +176,7 @@ def normalize_symbol(raw: str) -> str:
         canonical = s
 
     if canonical != raw.strip().upper():
-        logger.info("Resolved symbol %r to Yahoo symbol %r", raw, canonical)
+        logger.info("Resolved symbol %r to canonical market symbol %r", raw, canonical)
     return canonical
 
 

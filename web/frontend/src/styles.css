@@ -89,6 +89,14 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .primary-button:hover:not(:disabled) { background: #4ade80; transform: translateY(-1px); }
 .primary-button:disabled { opacity: .58; cursor: wait; }
 .form-error, .run-error { margin-top: 16px; padding: 12px 14px; color: #fecaca; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.35); border-radius: 10px; font-size: 13px; }
+.run-error { padding: 18px; }
+.run-error-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.run-error-heading strong { font-size: 16px; }
+.run-error-heading span { padding: 5px 8px; color: #fecaca; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3); border-radius: 6px; font: 10px "Fira Code", monospace; }
+.run-error dl { margin: 14px 0; display: grid; gap: 8px; }
+.run-error dl div { display: grid; grid-template-columns: 80px 1fr; gap: 10px; padding: 9px 10px; background: rgba(2,6,23,.32); border-radius: 7px; }
+.run-error dt { color: #fca5a5; font-weight: 600; }
+.run-error dd { margin: 0; color: #fee2e2; line-height: 1.55; overflow-wrap: anywhere; }
 .form-footer { margin-top: 24px; padding-top: 20px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--border); }
 .form-footer p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .settings-panel { margin-top: 17px; background: rgba(2,6,23,.32); border: 1px solid var(--border); border-radius: 11px; }
@@ -250,6 +258,8 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .field-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .field-chips span { padding: 4px 7px; color: #a7f3d0; background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2); border-radius: 6px; font: 9px "Fira Code", monospace; }
 .tool-detail { margin: 10px 12px; padding: 11px; background: #111827; border: 1px solid #374151; border-radius: 9px; }
+.tool-detail.compact { display: grid; gap: 7px; }
+.tool-detail.compact span, .tool-detail.compact small { color: #94a3b8; font-size: 10px; }
 .tool-detail > div, .message-record > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .tool-detail strong { color: #fde68a; font: 11px "Fira Code", monospace; }
 .tool-detail code, .message-record code { color: #718096; font: 9px "Fira Code", monospace; overflow-wrap: anywhere; }
@@ -260,6 +270,7 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .message-record.tool > div strong { color: #fde68a; }
 .message-record > div span { color: #cbd5e1; font: 10px "Fira Code", monospace; }
 .message-record pre { margin: 10px 0 0; max-height: 440px; overflow: auto; color: #dbe4f0; font: 11px/1.62 "Fira Code", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-record.summary-only p { margin: 10px 0 0; color: #dbe4f0; font: 11px/1.65 "Fira Code", monospace; white-space: pre-line; }
 .message-record > small { display: block; margin-top: 8px; color: #fcd34d; font-size: 10px; }
 .drawer-markdown { color: #dbe4f0; font-size: 13px; line-height: 1.65; }
 .drawer-empty { padding: 20px; color: var(--muted); }

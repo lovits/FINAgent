@@ -19,6 +19,15 @@ def test_plain_a_share_codes_gain_exchange_suffix() -> None:
     assert not is_a_share_symbol("AAPL")
 
 
+def test_english_a_share_aliases_resolve_without_network() -> None:
+    assert normalize_symbol("MOUTAI") == "600519.SS"
+    assert normalize_symbol("PINGAN") == "000001.SZ"
+    assert normalize_symbol("CATL") == "300750.SZ"
+    assert normalize_symbol("BYD") == "002594.SZ"
+    assert is_a_share_symbol("MOUTAI")
+    assert not is_a_share_symbol("NVDA")
+
+
 def test_baostock_symbol_conversion() -> None:
     assert china_stock.to_baostock_code("600519") == "sh.600519"
     assert china_stock.to_baostock_code("000001.SZ") == "sz.000001"

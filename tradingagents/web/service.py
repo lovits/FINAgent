@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import threading
 import uuid
 from collections.abc import Callable
@@ -63,8 +64,12 @@ class RunRecord:
     complete_report: str | None = None
     signal: str | None = None
     error: str | None = None
+    error_details: dict[str, str] = field(default_factory=dict)
     metrics: dict[str, int] = field(default_factory=dict)
     models: dict[str, str] = field(default_factory=dict)
+    resolved_ticker: str | None = None
+    data_sources: dict[str, str] = field(default_factory=dict)
+    active_node: str | None = None
     cancel_requested: threading.Event = field(default_factory=threading.Event, repr=False)
     _condition: threading.Condition = field(
         default_factory=threading.Condition, repr=False
@@ -99,8 +104,11 @@ class RunRecord:
             "complete_report": self.complete_report,
             "signal": self.signal,
             "error": self.error,
+            "error_details": dict(self.error_details),
             "metrics": dict(self.metrics),
             "models": dict(self.models),
+            "resolved_ticker": self.resolved_ticker,
+            "data_sources": dict(self.data_sources),
             "event_count": len(self.events),
         }
 
@@ -139,6 +147,7 @@ class GraphEventProjector:
         expert_delta = _snapshot_delta(expert_snapshot, self._last_expert_snapshot)
         self._last_expert_snapshot = expert_snapshot
         for index, (node_name, update) in enumerate(visible):
+            self.record.active_node = node_name
             usage = expert_delta if index == 0 else _empty_metrics()
             if node_name == "Scheduler":
                 scheduler_usage = _scheduler_usage(update)
@@ -211,7 +220,13 @@ class RunManager:
         with self._lock:
             if any(run.status in {"queued", "running"} for run in self._runs.values()):
                 raise RuntimeError("another analysis is already running")
-            record = RunRecord(uuid.uuid4().hex, request)
+            resolved_ticker = normalize_symbol(request.ticker)
+            record = RunRecord(
+                uuid.uuid4().hex,
+                request,
+                resolved_ticker=resolved_ticker,
+                data_sources=_data_source_summary(resolved_ticker),
+            )
             self._runs = {record.run_id: record}
             self._executor.submit(self._execute, record)
             return record
@@ -242,7 +257,11 @@ class RunManager:
         except Exception as exc:  # noqa: BLE001 - boundary converts failure to run state
             record.status = "failed"
             record.error = f"{type(exc).__name__}: {exc}"
-            record.emit("run.failed", {"error": record.error})
+            record.error_details = _error_details(exc, record.active_node)
+            record.emit(
+                "run.failed",
+                {"error": record.error, "error_details": record.error_details},
+            )
 
     def _run_graph(self, record: RunRecord) -> None:
         config, ticker, asset_type, analysts = _runtime_config(
@@ -377,12 +396,19 @@ def _message_records(messages: object) -> list[dict[str, object]]:
             if isinstance(value, dict)
             else getattr(value, "type", type(value).__name__)
         )
+        is_tool_message = str(message_type).lower() == "tool"
+        display_text = _tool_result_summary(text) if is_tool_message else text[:TRACE_CONTENT_LIMIT]
         record: dict[str, object] = {
             "type": str(message_type or type(value).__name__),
-            "content": text[:TRACE_CONTENT_LIMIT],
+            "content": display_text,
             "content_length": len(text),
-            "truncated": len(text) > TRACE_CONTENT_LIMIT,
+            "truncated": not is_tool_message and len(text) > TRACE_CONTENT_LIMIT,
         }
+        if is_tool_message:
+            record["summarized"] = True
+            source = _tool_result_source(text)
+            if source:
+                record["source"] = source
         for key in ("name", "tool_call_id"):
             item = value.get(key) if isinstance(value, dict) else getattr(value, key, None)
             if item:
@@ -401,11 +427,64 @@ def _tool_calls(messages: object) -> list[dict[str, object]]:
         name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
         args = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
         identifier = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
-        item = {"name": str(name or "unknown"), "args": _safe_value(args)}
+        argument_keys = sorted(str(key) for key in args) if isinstance(args, dict) else []
+        item = {"name": str(name or "unknown"), "argument_keys": argument_keys}
         if identifier:
             item["id"] = str(identifier)
         result.append(item)
     return result
+
+
+def _tool_result_summary(text: str) -> str:
+    """Compact a potentially huge tool payload into source/result metadata."""
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return "工具已完成，但没有返回正文。"
+    selected = [lines[0]]
+    for pattern in (r"^#?\s*Source:", r"^#?\s*Total records:", r"^DATA_UNAVAILABLE", r"^NO_DATA_AVAILABLE"):
+        match = next((line for line in lines if re.search(pattern, line, re.IGNORECASE)), None)
+        if match and match not in selected:
+            selected.append(match)
+    selected.append(f"原始返回共 {len(text):,} 个字符，界面已省略明细。")
+    return "\n".join(selected)
+
+
+def _tool_result_source(text: str) -> str | None:
+    match = re.search(r"^#?\s*Source:\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def _data_source_summary(ticker: str) -> dict[str, str]:
+    from tradingagents.dataflows.symbol_utils import is_a_share_symbol
+
+    if is_a_share_symbol(ticker):
+        return {
+            "market": "BaoStock",
+            "fundamentals": "BaoStock",
+            "news": "AKShare / Eastmoney",
+        }
+    return {"market": "Configured global vendor", "news": "Configured global vendor"}
+
+
+def _error_details(exc: Exception, active_node: str | None) -> dict[str, str]:
+    error_type = type(exc).__name__
+    message = str(exc).strip() or "未返回具体错误正文"
+    lower = f"{error_type} {message}".lower()
+    if "rate limit" in lower or "too many requests" in lower:
+        suggestion = "数据源触发限流。A股请使用 MOUTAI、PINGAN、CATL、BYD 等英文别名；其他市场稍后重试。"
+    elif "no data" in lower or "market data" in lower:
+        suggestion = "请检查股票别名和分析日期；非交易日会自动使用最近交易日，但无覆盖标的仍会失败。"
+    elif "teacher" in lower or "openrouter" in lower:
+        suggestion = "请检查 OpenRouter Key、模型名和账户限额，然后重新创建任务。"
+    else:
+        suggestion = "请保留该错误信息并重新创建任务；若再次失败，可根据节点和错误类型继续定位。"
+    return {
+        "node": active_node or "任务初始化",
+        "type": error_type,
+        "message": message,
+        "suggestion": suggestion,
+    }
 
 
 def _empty_metrics() -> dict[str, int]:
@@ -443,16 +522,6 @@ def _nonnegative_int(value: object) -> int:
 
 def _add_metrics(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
     return {key: int(left[key]) + int(right[key]) for key in METRIC_KEYS}
-
-
-def _safe_value(value: object) -> object:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _safe_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_safe_value(item) for item in value]
-    return str(value)
 
 
 def _report_sections(state: dict[str, Any]) -> dict[str, str]:
