@@ -427,7 +427,8 @@ def _tool_calls(messages: object) -> list[dict[str, object]]:
         name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
         args = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
         identifier = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
-        argument_keys = sorted(str(key) for key in args) if isinstance(args, dict) else []
+        safe_args = _safe_value(args)
+        argument_keys = sorted(safe_args) if isinstance(safe_args, dict) else []
         item = {"name": str(name or "unknown"), "argument_keys": argument_keys}
         if identifier:
             item["id"] = str(identifier)
@@ -485,6 +486,18 @@ def _error_details(exc: Exception, active_node: str | None) -> dict[str, str]:
         "message": message,
         "suggestion": suggestion,
     }
+
+
+def _safe_value(value: object) -> object:
+    """Convert tool metadata to JSON-safe primitives before exposing its keys."""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_safe_value(item) for item in value]
+    return str(value)
 
 
 def _empty_metrics() -> dict[str, int]:

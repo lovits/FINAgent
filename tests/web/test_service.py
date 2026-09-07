@@ -85,7 +85,7 @@ def test_projector_hides_message_cleanup_nodes() -> None:
     assert [event["data"]["node"] for event in record.events] == ["tools_market"]
 
 
-def test_projector_keeps_cli_message_and_compacts_tool_request() -> None:
+def test_projector_keeps_cli_message_and_tool_details() -> None:
     record = RunRecord("run", _request())
     projector = GraphEventProjector(record)
     projector(
