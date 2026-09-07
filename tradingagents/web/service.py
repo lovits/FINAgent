@@ -318,6 +318,7 @@ def _runtime_config(
             "output_language": request.output_language,
             "max_debate_rounds": rounds,
             "max_risk_discuss_rounds": rounds,
+            "llm_max_retries": 1,
             "checkpoint_enabled": False,
             "scheduler_fallback_enabled": request.orchestration_mode == "static",
         }

@@ -19,6 +19,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
+    "TRADINGAGENTS_LLM_TIMEOUT_SECONDS":  "llm_timeout_seconds",
     "TRADINGAGENTS_ORCHESTRATION_MODE":   "orchestration_mode",
     "TRADINGAGENTS_SCHEDULER_MAX_STEPS":  "scheduler_max_steps",
     "TRADINGAGENTS_SCHEDULER_FALLBACK_ENABLED": "scheduler_fallback_enabled",
@@ -107,6 +108,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # provider/SDK at its own default (usually 2). Raise it to ride out bursty
     # 429 throttling on rate-limited deployments instead of aborting a run (#1091).
     "llm_max_retries": None,
+    "llm_timeout_seconds": 240.0,
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,

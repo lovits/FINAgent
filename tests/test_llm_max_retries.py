@@ -76,6 +76,27 @@ def test_invalid_config_value_fails_loudly():
         _bare_graph({"llm_provider": "openai", "llm_max_retries": -1})._get_provider_kwargs()
 
 
+@pytest.mark.unit
+def test_timeout_is_forwarded_and_must_be_positive():
+    kwargs = _bare_graph(
+        {
+            "llm_provider": "openrouter",
+            "llm_max_retries": None,
+            "llm_timeout_seconds": "240",
+        }
+    )._get_provider_kwargs()
+    assert kwargs["timeout"] == 240.0
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        _bare_graph(
+            {
+                "llm_provider": "openrouter",
+                "llm_max_retries": None,
+                "llm_timeout_seconds": 0,
+            }
+        )._get_provider_kwargs()
+
+
 # --- env overlay -----------------------------------------------------------
 
 def _reload_with_env(monkeypatch, **overrides):
@@ -90,6 +111,7 @@ def _reload_with_env(monkeypatch, **overrides):
 def test_default_is_none(monkeypatch):
     dc = _reload_with_env(monkeypatch)
     assert dc.DEFAULT_CONFIG["llm_max_retries"] is None
+    assert dc.DEFAULT_CONFIG["llm_timeout_seconds"] == 240.0
 
 
 @pytest.mark.unit

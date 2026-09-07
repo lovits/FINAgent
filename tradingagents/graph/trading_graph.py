@@ -261,6 +261,13 @@ class TradingAgentsGraph:
         if max_retries is not None and max_retries != "":
             kwargs["max_retries"] = _coerce_max_retries(max_retries)
 
+        timeout_seconds = self.config.get("llm_timeout_seconds")
+        if timeout_seconds is not None and timeout_seconds != "":
+            timeout = float(timeout_seconds)
+            if timeout <= 0:
+                raise ValueError("llm_timeout_seconds must be greater than zero")
+            kwargs["timeout"] = timeout
+
         return kwargs
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:

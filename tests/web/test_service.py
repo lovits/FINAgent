@@ -221,6 +221,7 @@ def test_web_retry_always_starts_without_langgraph_checkpoint(monkeypatch) -> No
     )
     config, *_ = _runtime_config(_request())
     assert config["checkpoint_enabled"] is False
+    assert config["llm_max_retries"] == 1
 
 
 def test_web_english_alias_resolves_to_mainland_sources(tmp_path, monkeypatch) -> None:
