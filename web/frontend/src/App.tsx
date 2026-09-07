@@ -40,6 +40,11 @@ interface CompletedRun {
   reports: Record<string, string>;
 }
 
+interface SelectedStep {
+  event: NodeEvent;
+  index: number;
+}
+
 const MODES: Array<{
   value: OrchestrationMode;
   title: string;
@@ -160,7 +165,7 @@ export default function App() {
   const [completedRuns, setCompletedRuns] = useState<CompletedRun[]>([]);
   const [batchTotal, setBatchTotal] = useState(1);
   const [activeReport, setActiveReport] = useState("market_report");
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedStep, setSelectedStep] = useState<SelectedStep | null>(null);
   const [formError, setFormError] = useState("");
   const [settings, setSettings] = useState<WebSettings | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -265,7 +270,7 @@ export default function App() {
     reportsRef.current = {};
     setNodes([]);
     setReports({});
-    setSelectedNode(null);
+    setSelectedStep(null);
     try {
       const created = await createRun(payload);
       setRun(created);
@@ -328,7 +333,7 @@ export default function App() {
     setCompletedRuns([]);
     completedRunsRef.current = [];
     setBatchTotal(1);
-    setSelectedNode(null);
+    setSelectedStep(null);
     setFormError("");
   }
 
@@ -356,7 +361,12 @@ export default function App() {
     setReports(value.reports);
     const first = REPORT_ORDER.find((key) => value.reports[key]);
     if (first) setActiveReport(first);
-    setSelectedNode(null);
+    setSelectedStep(null);
+  }
+
+  function selectLatestNode(node: string) {
+    const index = visibleNodes.map((event) => event.node).lastIndexOf(node);
+    if (index >= 0) setSelectedStep({ event: visibleNodes[index], index });
   }
 
   async function saveSettings() {
@@ -542,11 +552,11 @@ export default function App() {
                   <span>Teacher调度模型</span>
                   <input value={teacherModel} onChange={(event) => setTeacherModel(event.target.value)} placeholder="z-ai/glm-5.3-flash" />
                 </label>
-                <div className="local-model-summary">
-                  <span>本地调度器</span>
-                  <strong>{settings?.scheduler_base_model ?? "未读取"}</strong>
-                  <small>{settings?.scheduler_adapter ?? "未配置LoRA"}</small>
-                </div>
+                <label className="field local-model-field">
+                  <span>本地调度器模型</span>
+                  <input value={settings?.scheduler_base_model ?? "未读取"} readOnly aria-readonly="true" />
+                  <small>适配器：{settings?.scheduler_adapter ?? "未配置LoRA"}</small>
+                </label>
               </div>
               <div className="settings-footer">
                 <span role="status">{settingsMessage}</span>
@@ -574,14 +584,18 @@ export default function App() {
                   >
                     {isBusy ? <Square size={16} /> : <ArrowLeft size={18} />}
                   </button>
-                  <div><p className="step-label">02 / EXECUTION & REPORT</p><h2 id="result-title">{run.request.ticker} 分析工作台</h2></div>
+                  <div><p className="step-label">02 / EXECUTION & REPORT</p><h2 id="result-title">分析工作台</h2></div>
                 </div>
                 <div className="run-meta">
-                  {batchTotal > 1 && <span>{Math.min(completedRuns.length + 1, batchTotal)} / {batchTotal}</span>}
-                  <span>{modeTitle(run.request.orchestration_mode)}</span><span>{run.request.analysis_date}</span>
-                  {run.resolved_ticker && run.resolved_ticker !== run.request.ticker && <span>解析：{run.resolved_ticker}</span>}
-                  {(Object.values(run.data_sources ?? {}).length > 0 || isAShareInput(run.request.ticker)) && <span>数据：{Object.values(run.data_sources ?? {}).filter((value, index, values) => values.indexOf(value) === index).join(" + ") || "BaoStock + AKShare / Eastmoney"}</span>}
-                  <span>专家：{run.models.expert ?? expertModel}</span><span>调度：{run.models.scheduler ?? "初始化中"}</span>
+                  <div className="run-meta-row">
+                    {batchTotal > 1 && <span>{Math.min(completedRuns.length + 1, batchTotal)} / {batchTotal}</span>}
+                    <span>标的：{run.request.ticker}</span><span>{modeTitle(run.request.orchestration_mode)}</span><span>{run.request.analysis_date}</span>
+                    {run.resolved_ticker && run.resolved_ticker !== run.request.ticker && <span>解析：{run.resolved_ticker}</span>}
+                  </div>
+                  <div className="run-meta-row">
+                    {(Object.values(run.data_sources ?? {}).length > 0 || isAShareInput(run.request.ticker)) && <span>数据：{Object.values(run.data_sources ?? {}).filter((value, index, values) => values.indexOf(value) === index).join(" + ") || "BaoStock + AKShare / Eastmoney"}</span>}
+                    <span>专家：{run.models.expert ?? expertModel}</span><span>调度：{run.models.scheduler ?? "初始化中"}</span>
+                  </div>
                 </div>
               </div>
 
@@ -599,7 +613,7 @@ export default function App() {
                 mode={run.request.orchestration_mode}
                 finished={run.status === "completed"}
                 failedNode={failedNode}
-                onSelectNode={setSelectedNode}
+                onSelectNode={selectLatestNode}
               />
 
               <div className="execution-grid">
@@ -607,7 +621,7 @@ export default function App() {
                   <div className="panel-title"><Activity size={17} /><h3>执行进度</h3><span>{visibleNodes.length}</span></div>
                   <div className="timeline" aria-live="polite">
                     {visibleNodes.length === 0 && <div className="waiting"><span className="pulse" />正在初始化Agent图…</div>}
-                    {visibleNodes.map((node, index) => <TimelineItem node={node} index={index} failed={index === failedNodeIndex} onSelect={setSelectedNode} key={`${index}-${node.node}`} />)}
+                    {visibleNodes.map((node, index) => <TimelineItem node={node} index={index} failed={index === failedNodeIndex} onSelect={() => setSelectedStep({ event: node, index })} key={`${node.timestamp_ms ?? index}-${node.node}-${index}`} />)}
                     {isBusy && visibleNodes.length > 0 && <div className="waiting"><span className="pulse" />等待下一节点…</div>}
                   </div>
                 </aside>
@@ -632,17 +646,17 @@ export default function App() {
               {run.status === "completed" && <CompletionSummary run={run} onReset={reset} onExport={exportReport} />}
               {run.status === "failed" && <RunErrorPanel run={run} onReset={reset} />}
         </section>
-        {selectedNode && <NodeDetailDrawer node={selectedNode} events={visibleNodes} onClose={() => setSelectedNode(null)} />}
+        {selectedStep && <NodeDetailDrawer selection={selectedStep} onClose={() => setSelectedStep(null)} />}
       </main>}
     </div>
   );
 }
 
-function TimelineItem({ node, index, failed, onSelect }: { node: NodeEvent; index: number; failed: boolean; onSelect: (node: string) => void }) {
+function TimelineItem({ node, index, failed, onSelect }: { node: NodeEvent; index: number; failed: boolean; onSelect: () => void }) {
   const isFailed = failed || node.status === "failed";
   const Icon = isFailed ? X : node.kind === "scheduler" ? Bot : Check;
   const tokens = totalTokens(node.usage);
-  return <button className={`timeline-item ${node.kind} ${isFailed ? "failed" : node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{isFailed && <span className="timeline-error">失败</span>}{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}{tokens > 0 && <span className="timeline-token">+{formatNumber(tokens)} TOK</span>}</span></button>;
+  return <button className={`timeline-item ${node.kind} ${isFailed ? "failed" : node.status}`} onClick={onSelect}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{isFailed && <span className="timeline-error">失败</span>}{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}{tokens > 0 && <span className="timeline-token">+{formatNumber(tokens)} TOK</span>}</span></button>;
 }
 
 function LiveUsageStrip({ metrics, running }: { metrics: UsageMetrics; running: boolean }) {
@@ -838,28 +852,18 @@ function SvgAgentNode({ x, y, name, state, tokens, wide = false, onSelect }: {
   </g>;
 }
 
-function usageForEvents(items: Array<{ event: NodeEvent }>): UsageMetrics {
-  return items.reduce(
-    (total, item) => ({
-      llm_calls: total.llm_calls + (item.event.usage?.llm_calls ?? 0),
-      tool_calls: total.tool_calls + (item.event.usage?.tool_calls ?? 0),
-      input_tokens: total.input_tokens + (item.event.usage?.input_tokens ?? 0),
-      output_tokens: total.output_tokens + (item.event.usage?.output_tokens ?? 0),
-    }),
-    EMPTY_USAGE,
-  );
-}
-
-function NodeDetailDrawer({ node, events, onClose }: {
-  node: string;
-  events: NodeEvent[];
+function NodeDetailDrawer({ selection, onClose }: {
+  selection: SelectedStep;
   onClose: () => void;
 }) {
-  const occurrences = events
-    .map((event, index) => ({ event, index }))
-    .filter((item) => item.event.node === node);
-  const latest = occurrences.at(-1)?.event;
-  const usage = usageForEvents(occurrences);
+  const { event, index } = selection;
+  const usage = event.usage ?? EMPTY_USAGE;
+  const records = event.messages?.length
+    ? event.messages
+    : event.message
+      ? [{ type: event.kind, content: event.message, content_length: event.message.length, truncated: false }]
+      : [];
+  const eventTokens = totalTokens(usage);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -869,27 +873,20 @@ function NodeDetailDrawer({ node, events, onClose }: {
   }, [onClose]);
   return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <aside className="node-drawer" role="dialog" aria-modal="true" aria-labelledby="node-detail-title">
-      <header><div><p className="step-label">NODE TRACE</p><h2 id="node-detail-title">{node}</h2></div><button onClick={onClose} aria-label="关闭节点详情"><X size={18} /></button></header>
+      <header><div><p className="step-label">STEP {String(index + 1).padStart(2, "0")}</p><h2 id="node-detail-title">{event.node}</h2></div><button onClick={onClose} aria-label="关闭节点详情"><X size={18} /></button></header>
       <div className="drawer-usage" aria-label="节点Token消耗"><div><span>输入 Token</span><strong>{formatNumber(usage.input_tokens)}</strong></div><div><span>输出 Token</span><strong>{formatNumber(usage.output_tokens)}</strong></div><div className="drawer-usage-total"><span>总 Token</span><strong>{formatNumber(totalTokens(usage))}</strong></div></div>
-      <div className="drawer-section trace-section"><h3>Agent 输出 · {occurrences.length} 条</h3>{occurrences.map(({ event, index }) => {
-        const records = event.messages?.length
-          ? event.messages
-          : event.message
-            ? [{ type: event.kind, content: event.message, content_length: event.message.length, truncated: false }]
-            : [];
-        const eventTokens = totalTokens(event.usage);
-        return <article className={`trace-card ${event.kind}`} key={index}>
+      <div className="drawer-section trace-section"><h3>{event.kind === "scheduler" ? "本次调度决策" : "本次 Agent 输出"}</h3>
+        <article className={`trace-card ${event.kind}`}>
           <header className="trace-card-header"><div><span>STEP {String(index + 1).padStart(2, "0")}</span><strong>{event.node}</strong></div><div><small>{event.timestamp_ms ? new Date(event.timestamp_ms).toLocaleTimeString("zh-CN", { hour12: false }) : ""}</small><b>{event.status === "completed" ? "已完成" : event.status === "failed" ? "失败" : "运行中"}</b></div></header>
           <div className="trace-metrics"><span>{event.kind.toUpperCase()}</span>{eventTokens > 0 && <span>+{formatNumber(eventTokens)} Token</span>}{Boolean(event.usage?.llm_calls) && eventTokens === 0 && <span>Token 未上报</span>}</div>
           {event.policy_id && <div className="scheduler-detail"><span>策略</span><code>{event.policy_id}</code>{event.scheduler_step != null && <span>第 {event.scheduler_step} 次决策</span>}</div>}
           {event.selected_action && <div className="scheduler-choice"><span>选择动作</span><strong>{actionLabel(event.selected_action)}</strong></div>}
           {event.valid_actions?.length ? <div className="trace-subsection"><h4>合法动作</h4><div className="action-chips">{event.valid_actions.map((action) => <span key={action}>{actionLabel(action)}</span>)}</div></div> : null}
-          {event.scheduler_history?.length ? <div className="trace-subsection"><h4>历史动作</h4><div className="action-chips history">{event.scheduler_history.map((action, actionIndex) => <span key={`${action}-${actionIndex}`}>{actionIndex + 1}. {actionLabel(action)}</span>)}</div></div> : null}
           {event.produced_fields?.length ? <div className="trace-subsection"><h4>产出字段</h4><div className="field-chips">{event.produced_fields.map((field) => <span key={field}>{field}</span>)}</div></div> : null}
           {records.map((message, messageIndex) => <div className={`message-record ${event.kind}`} key={messageIndex}><div><strong>{event.kind === "scheduler" ? "调度输出" : "Agent 输出"}</strong></div><pre>{message.content}</pre>{message.truncated && <small>内容共 {formatNumber(message.content_length)} 字符，此处展示前 20,000 字符。</small>}</div>)}
-        </article>;
-      })}</div>
-      {!latest && <p className="drawer-empty">当前节点尚未产生可展示内容。</p>}
+          {!records.length && !event.selected_action && <p className="drawer-empty">该步骤没有返回文本输出。</p>}
+        </article>
+      </div>
     </aside>
   </div>;
 }
