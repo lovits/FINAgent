@@ -175,6 +175,10 @@ export default function App() {
   const completedRunsRef = useRef<CompletedRun[]>([]);
 
   const isBusy = ["queued", "running", "cancelling"].includes(run?.status ?? "");
+  const failedNode = run?.status === "failed" ? run.error_details?.node : undefined;
+  const failedNodeIndex = failedNode
+    ? nodes.map((node) => node.node).lastIndexOf(failedNode)
+    : -1;
   const visibleReports = useMemo(
     () => REPORT_ORDER.filter((key) => reports[key]),
     [reports],
@@ -576,6 +580,7 @@ export default function App() {
                 events={nodes}
                 mode={run.request.orchestration_mode}
                 finished={run.status === "completed"}
+                failedNode={failedNode}
                 onSelectNode={setSelectedNode}
               />
 
@@ -584,7 +589,7 @@ export default function App() {
                   <div className="panel-title"><Activity size={17} /><h3>执行进度</h3><span>{nodes.length}</span></div>
                   <div className="timeline" aria-live="polite">
                     {nodes.length === 0 && <div className="waiting"><span className="pulse" />正在初始化Agent图…</div>}
-                    {nodes.map((node, index) => <TimelineItem node={node} index={index} onSelect={setSelectedNode} key={`${index}-${node.node}`} />)}
+                    {nodes.map((node, index) => <TimelineItem node={node} index={index} failed={index === failedNodeIndex} onSelect={setSelectedNode} key={`${index}-${node.node}`} />)}
                     {isBusy && nodes.length > 0 && <div className="waiting"><span className="pulse" />等待下一节点…</div>}
                   </div>
                 </aside>
@@ -615,10 +620,11 @@ export default function App() {
   );
 }
 
-function TimelineItem({ node, index, onSelect }: { node: NodeEvent; index: number; onSelect: (node: string) => void }) {
-  const Icon = node.kind === "tool" ? Wrench : node.kind === "scheduler" ? Bot : Check;
+function TimelineItem({ node, index, failed, onSelect }: { node: NodeEvent; index: number; failed: boolean; onSelect: (node: string) => void }) {
+  const isFailed = failed || node.status === "failed";
+  const Icon = isFailed ? X : node.kind === "tool" ? Wrench : node.kind === "scheduler" ? Bot : Check;
   const tokens = totalTokens(node.usage);
-  return <button className={`timeline-item ${node.kind} ${node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}{tokens > 0 && <span className="timeline-token">+{formatNumber(tokens)} TOK</span>}</span></button>;
+  return <button className={`timeline-item ${node.kind} ${isFailed ? "failed" : node.status}`} onClick={() => onSelect(node.node)}><span className="timeline-icon"><Icon size={14} /></span><span className="timeline-copy"><small>STEP {String(index + 1).padStart(2, "0")}</small><strong>{node.node}</strong>{isFailed && <span className="timeline-error">失败</span>}{node.selected_action && <span className="timeline-action">{actionLabel(node.selected_action)}</span>}{tokens > 0 && <span className="timeline-token">+{formatNumber(tokens)} TOK</span>}</span></button>;
 }
 
 function LiveUsageStrip({ metrics, running }: { metrics: UsageMetrics; running: boolean }) {
@@ -662,14 +668,17 @@ function actionLabel(action: string) {
   return action.replace(/[<>]/g, "");
 }
 
-function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
+function ProcessGraph({ analysts, events, mode, finished, failedNode, onSelectNode }: {
   analysts: Analyst[];
   events: NodeEvent[];
   mode: OrchestrationMode;
   finished: boolean;
+  failedNode?: string;
   onSelectNode: (node: string) => void;
 }) {
   const completed = new Set(events.filter((event) => event.status === "completed").map((event) => event.node));
+  const failed = new Set(events.filter((event) => event.status === "failed").map((event) => event.node));
+  if (failedNode) failed.add(failedNode);
   const latestSchedulerIndex = events
     .map((event) => Boolean(event.kind === "scheduler" && event.selected_action))
     .lastIndexOf(true);
@@ -687,6 +696,7 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
     .filter((node, index, values) => index === 0 || node !== values[index - 1]);
 
   const nodeState = (node: string): GraphNodeState => {
+    if (failed.has(node)) return "failed";
     if (completed.has(node)) return "completed";
     if (running.has(node)) return "running";
     if (finished) return "skipped";
@@ -725,7 +735,7 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
         <path className="lane-divider" d="M30 78H970M30 326H970" />
 
         <g
-          className={`router-node ${events.length ? "completed" : "running"} ${canOpen("Scheduler") ? "clickable" : ""}`}
+          className={`router-node ${failed.has("Scheduler") ? "failed" : events.length ? "completed" : "running"} ${canOpen("Scheduler") ? "clickable" : ""}`}
           role={canOpen("Scheduler") ? "button" : undefined}
           tabIndex={canOpen("Scheduler") ? 0 : undefined}
           onClick={() => { if (canOpen("Scheduler")) onSelectNode("Scheduler"); }}
@@ -779,7 +789,7 @@ function ProcessGraph({ analysts, events, mode, finished, onSelectNode }: {
   </section>;
 }
 
-type GraphNodeState = "pending" | "running" | "completed" | "skipped";
+type GraphNodeState = "pending" | "running" | "completed" | "failed" | "skipped";
 
 function FlowPath({ d, active }: { d: string; active: boolean }) {
   return <path className={`flow-link ${active ? "active" : ""}`} d={d} markerEnd="url(#flow-arrow)" />;
@@ -800,7 +810,7 @@ function SvgAgentNode({ x, y, name, state, tokens, wide = false, onSelect }: {
 }) {
   const width = wide ? 172 : 128;
   const label = name.replace(" Analyst", "").replace(" Researcher", "").replace(" Manager", " Mgr");
-  const stateLabel = { pending: "等待", running: "运行中", completed: "完成", skipped: "未调用" }[state];
+  const stateLabel = { pending: "等待", running: "运行中", completed: "完成", failed: "失败", skipped: "未调用" }[state];
   const status = tokens > 0 ? `${stateLabel} · ${formatCompact(tokens)} tok` : stateLabel;
   return <g className={`svg-agent-node ${state} ${onSelect ? "clickable" : ""}`} filter={state === "running" ? "url(#active-glow)" : undefined} role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} onClick={() => onSelect?.(name)} onKeyDown={(event) => { if (onSelect && (event.key === "Enter" || event.key === " ")) onSelect(name); }}>
     <rect x={x} y={y} width={width} height="56" rx="11" />

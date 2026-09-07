@@ -269,6 +269,19 @@ class RunManager:
             record.status = "failed"
             record.error = f"{type(exc).__name__}: {exc}"
             record.error_details = _error_details(exc, record.active_node)
+            if record.active_node:
+                record.emit(
+                    "node.progress",
+                    {
+                        "node": record.active_node,
+                        "kind": _node_kind(record.active_node),
+                        "status": "failed",
+                        "timestamp_ms": _now_ms(),
+                        "message": record.error_details["message"],
+                        "usage": _empty_metrics(),
+                        "cumulative_metrics": dict(record.metrics),
+                    },
+                )
             record.emit(
                 "run.failed",
                 {"error": record.error, "error_details": record.error_details},
@@ -484,7 +497,9 @@ def _error_details(exc: Exception, active_node: str | None) -> dict[str, str]:
     error_type = type(exc).__name__
     message = str(exc).strip() or "未返回具体错误正文"
     lower = f"{error_type} {message}".lower()
-    if "rate limit" in lower or "too many requests" in lower:
+    if error_type == "JSONDecodeError":
+        suggestion = "专家模型连续返回截断或非JSON响应，自动重试后仍无法解析。请重新运行；若重复出现，请更换稳定模型或稍后再试。"
+    elif "rate limit" in lower or "too many requests" in lower:
         suggestion = "数据源触发限流。A股请使用 MOUTAI、PINGAN、CATL、BYD 等英文别名；其他市场稍后重试。"
     elif "no data" in lower or "market data" in lower:
         suggestion = "请检查股票别名和分析日期；非交易日会自动使用最近交易日，但无覆盖标的仍会失败。"

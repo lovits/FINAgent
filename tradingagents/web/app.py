@@ -16,7 +16,7 @@ from .settings import WebSettingsStore
 
 load_dotenv()
 
-app = FastAPI(title="TradingAgents RL Console", version="0.1.0")
+app = FastAPI(title="FIN Agents", version="0.1.0")
 app.state.web_settings = WebSettingsStore()
 app.state.run_manager = RunManager(
     settings_provider=app.state.web_settings.runtime_overrides

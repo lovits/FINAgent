@@ -1,4 +1,5 @@
 from datetime import date
+from json import JSONDecodeError
 from pathlib import Path
 from time import monotonic
 
@@ -11,6 +12,7 @@ from tradingagents.web.service import (
     RunCancelled,
     RunManager,
     RunRecord,
+    _error_details,
     _report_sections,
     _runtime_config,
 )
@@ -277,3 +279,16 @@ def test_failed_run_exposes_node_type_message_and_recovery(tmp_path, monkeypatch
     assert record.error_details["type"] == "RuntimeError"
     assert record.error_details["message"] == "provider unavailable"
     assert record.error_details["suggestion"]
+    failure_event = record.events[-2]
+    assert failure_event["type"] == "node.progress"
+    assert failure_event["data"]["node"] == "Market Analyst"
+    assert failure_event["data"]["status"] == "failed"
+
+
+def test_json_decode_error_explains_model_gateway_failure() -> None:
+    details = _error_details(JSONDecodeError("truncated", "{", 1), "Aggressive Analyst")
+
+    assert details["node"] == "Aggressive Analyst"
+    assert details["type"] == "JSONDecodeError"
+    assert "专家模型" in details["suggestion"]
+    assert "自动重试" in details["suggestion"]

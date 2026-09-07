@@ -155,6 +155,9 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .router-node text, .final-node text { fill: #f1f5f9; font: 600 14px "Fira Sans", sans-serif; }
 .router-node.running rect { stroke: #60a5fa; }
 .router-node.completed rect, .final-node.completed rect { fill: rgba(34,197,94,.1); stroke: #22c55e; }
+.router-node.failed rect { fill: rgba(239,68,68,.12); stroke: #ef4444; stroke-width: 1.5; }
+.router-node.failed circle { fill: #ef4444; }
+.router-node.failed .node-state { fill: #fca5a5 !important; }
 .router-node.clickable { cursor: pointer; }
 .router-node.clickable:hover rect, .router-node.clickable:focus rect { stroke: #f8fafc; stroke-width: 1.5; }
 .svg-agent-node rect { fill: #111827; stroke: #334155; stroke-width: 1; }
@@ -169,6 +172,9 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .svg-agent-node.completed rect { fill: rgba(34,197,94,.1); stroke: #238c4c; }
 .svg-agent-node.completed circle { fill: #22c55e; }
 .svg-agent-node.completed .node-state { fill: #86efac !important; }
+.svg-agent-node.failed rect { fill: rgba(239,68,68,.12); stroke: #ef4444; stroke-width: 1.5; }
+.svg-agent-node.failed circle { fill: #ef4444; }
+.svg-agent-node.failed .node-state { fill: #fca5a5 !important; }
 .svg-agent-node.skipped { opacity: .46; }
 .actual-path { min-height: 48px; padding: 10px 16px; display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: 12px; border-top: 1px solid var(--border); }
 .actual-path > span { color: #94a3b8; font: 500 10px "Fira Code", monospace; }
@@ -187,6 +193,9 @@ legend { margin-bottom: 10px; color: #cbd5e1; font-size: 13px; }
 .timeline-icon { width: 34px; height: 34px; display: grid; place-items: center; color: #86efac; background: #10241b; border: 1px solid #1f6d43; border-radius: 9px; }
 .timeline-item.scheduler .timeline-icon { color: #93c5fd; background: #10203a; border-color: #31598a; }
 .timeline-item.tool .timeline-icon { color: #fde68a; background: #29200d; border-color: #705b22; }
+.timeline-item.failed { border-color: rgba(239,68,68,.65); background: linear-gradient(135deg, rgba(69,10,10,.58), rgba(30,11,20,.92)); }
+.timeline-item.failed .timeline-icon { color: #fecaca; background: #3f1015; border-color: #b91c1c; }
+.timeline-copy .timeline-error { margin-top: 4px; color: #fca5a5; font: 600 10px "Fira Code", monospace; }
 .timeline-copy, .timeline-copy > * { display: block; }
 .timeline-copy small { color: #64748b; font: 10px "Fira Code", monospace; letter-spacing: .08em; }
 .timeline-copy strong { margin-top: 4px; font-size: 13px; }

@@ -53,7 +53,7 @@ export interface TraceMessage {
 export interface NodeEvent {
   node: string;
   kind: "scheduler" | "tool" | "agent";
-  status: "running" | "completed";
+  status: "running" | "completed" | "failed";
   selected_action?: string;
   valid_actions?: string[];
   produced_fields?: string[];
